@@ -1,0 +1,58 @@
+# ============     GEE-Biophys  ================
+# EO4Change Group 4 — Central Portugal AOI (fire/recovery test region)
+# AOI: ~34 × 24 km bbox in central Portugal (Coimbra / Pedrógão Grande area)
+# ==============================================
+
+spatial:
+  type: geojson
+  geojson_path: area_pt.geojson    # path relative to data/ (used when type=geojson)
+  geojson_clip: true
+  region_name: portugal-aoi        # no spaces; hyphens ok
+  # Fallback bbox (used if type: bbox):
+  # bbox: [-8.45, 39.80, -8.05, 40.02]  # [minLon, minLat, maxLon, maxLat]
+
+temporal:
+  start: "2018-01-02"
+  end:   "2024-01-01"
+  cadence:
+    type: fixed                   # options: fixed, seasons
+    interval: monthly             # fixed options: monthly, biweekly, quarterly, annual
+  reference_date:  "2017-06-17"  # vertical line on time-series plots (null = hide)
+  reference_label: "Pedrógão Grande fire"
+
+# Multi-year May–Aug seasonal composites for early-vs-recent change maps
+# (vision.md Milestones 1 & 2). Early window starts at 2017 because the
+# Cloud Score Plus collection only covers 2017-04 onwards.
+comparison:
+  early_years:  [2017, 2018]    # inclusive year range
+  recent_years: [2022, 2025]
+  months:       [5, 9]          # May (5) to Sep (9), exclusive on end
+
+# Establishment status map thresholds (vision.md Milestone 3).
+# Vision says: "thresholds should initially be empirical and adjusted after
+# visual inspection". Tune these after looking at the first classified map.
+classification:
+  change_magnitude:     0.05    # |Δ| below this is treated as "stable"
+  ndvi_low_threshold:   0.30    # NDVI_recent below this → weak signal
+  bsi_high_threshold:   0.20    # BSI_recent above this  → bare-soil signal
+  ndwi_water_threshold: 0.20    # NDWI_recent above this → standing-water guard
+
+variables:
+  model: s2biophys                # options: s2biophys, sl2p
+  variable: [laie, fapar, fcover] # list or single string; all three biophys outputs
+
+export:
+  destination: drive
+  collection_path: "EO4Change/portugal"
+  project_id: "daring-pier-498809-k0"
+  crs: "EPSG:32629"               # UTM zone 29N — best accuracy for central Portugal
+  scale: 100                      # metres per pixel
+  max_pixels: 100_000_000_000
+
+options:
+  max_cloud_cover: 50
+  csplus_band: cs                 # options: cs, cs_cdf
+  cs_plus_threshold: 0.70
+  clip_min_max: true
+
+version: "v02"
