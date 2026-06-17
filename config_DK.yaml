@@ -1,0 +1,45 @@
+# ============     GEE-Biophys  ================
+# EO4Change Group 4 — Rugballegård Skov, Denmark
+# ==============================================
+
+spatial:
+  type: geojson                   # options: bbox, geojson
+  geojson_path: areadk.geojson    # path relative to this file (used when type=geojson)
+  geojson_clip: true              # clip output rasters to the polygon boundary
+  region_name: rugballegaard-skov # no spaces; hyphens ok
+  # Fallback bbox (used if type: bbox):
+  # bbox: [9.767, 55.858, 9.823, 55.875]  # [minLon, minLat, maxLon, maxLat]
+
+temporal:                         # ← must be a top-level key (not nested under spatial)
+  start: "2018-01-02"
+  end:   "2024-01-01"
+  cadence:
+    type: fixed                   # options: fixed, seasons
+    interval: monthly             # fixed options: monthly, biweekly, quarterly, annual
+    # ── fixed vs seasons ──────────────────────────────────────────────────────
+    # fixed    → uniform windows from start date (e.g. every 3 months)
+    #            good for dense time series; boundaries don't align to ecology
+    # seasons  → meteorological seasons per year (MAM/JJA/SON/DJF)
+    #            same calendar months every year → natural inter-annual comparison
+    #            e.g. compare "summer 2022 vs summer 2023" directly
+
+variables:
+  model: s2biophys                # options: s2biophys, sl2p
+  variable: [laie, fapar, fcover] # list or single string; all three biophys outputs
+
+export:
+  destination: drive              # options: asset, drive, gcs  (drive needs no asset path)
+  collection_path: "EO4Change/rugballegaard"   # folder name on Google Drive
+  project_id: "eo4change-ex"      # YOUR GEE project id (must match ee.Initialize)
+  crs: "EPSG:32632"               # UTM zone 32N — best accuracy for Denmark
+                                  # (LOCAL_UTM is not a valid value; use explicit EPSG)
+  scale: 100                      # metres per pixel (PositiveInt)
+  max_pixels: 100_000_000_000     # default 1e11
+
+options:
+  max_cloud_cover: 50             # 0..100 (uses S2 metadata if applicable)
+  csplus_band: cs                 # options: cs, cs_cdf
+  cs_plus_threshold: 0.70         # 0.0..1.0 (higher = stricter cloud removal)
+  clip_min_max: true
+
+version: "v02"                    # corresponds to current s2biophys version
