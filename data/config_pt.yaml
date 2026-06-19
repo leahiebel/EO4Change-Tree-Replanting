@@ -44,7 +44,8 @@ variables:
 export:
   destination: drive
   collection_path: "EO4Change/portugal"
-  project_id: "daring-pier-498809-k0"
+  # project_id: "daring-pier-498809-k0"
+  project_id: "eo4change-ex"
   crs: "EPSG:32629"               # UTM zone 29N — best accuracy for central Portugal
   scale: 100                      # metres per pixel
   max_pixels: 100_000_000_000
@@ -56,3 +57,20 @@ options:
   clip_min_max: true
 
 version: "v02"
+
+# Landsat 8/9 Land Surface Temperature layer (optional).
+# Remove this block to skip LST entirely.
+landsat:
+  start_date:                "2018-01-02"   # matches temporal.start
+  end_date:                  "2024-01-01"   # matches temporal.end
+  max_scene_cloud_cover:     30
+  mask_water:                true
+  min_cloud_distance_km:     1.0
+  max_st_uncertainty_k:      3.0
+  target_year:               2023           # most recent full summer in range
+  baseline_start_year:       2018           # post-fire early recovery (3 yrs)
+  baseline_end_year:         2020
+  season_start_month:        5              # May–Aug summer window
+  season_end_month:          9
+  zscore_moderate_threshold: 1.5
+  zscore_strong_threshold:   2.5

@@ -4,7 +4,7 @@
 
 spatial:
   type: geojson                   # options: bbox, geojson
-  geojson_path: areadk.geojson    # path relative to this file (used when type=geojson)
+  geojson_path: area_dk.geojson    # path relative to this file (used when type=geojson)
   geojson_clip: true              # clip output rasters to the polygon boundary
   region_name: rugballegaard-skov # no spaces; hyphens ok
   # Fallback bbox (used if type: bbox):

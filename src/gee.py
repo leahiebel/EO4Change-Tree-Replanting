@@ -469,6 +469,17 @@ ESTAB_CLASSES = [
 ESTAB_PALETTE = [c for _, _, c in sorted(ESTAB_CLASSES)]
 VIS_ESTAB = {"min": 0, "max": 3, "palette": ESTAB_PALETTE}
 
+# ── Landsat LST layer (optional) ─────────────────────────────────────────────
+lst_products = None
+_lst_cfg = cfg.get("landsat")
+if _lst_cfg:
+    from landsat_lst import build_lst_layer
+    print("Building Landsat LST layers…")
+    try:
+        lst_products = build_lst_layer(aoi, _lst_cfg)
+    except Exception as _e:
+        print(f"  (LST build failed: {_e})")
+
 # ── Per-layer legend content ──────────────────────────────────────────────────
 def _safe_id(name: str) -> str:
     return "leg-" + "".join(c if c.isalnum() else "_" for c in name)
@@ -549,6 +560,30 @@ _LEGENDS: dict = {
            "NBR_change":  {"min":-0.3,"max":0.3,"palette":["#7d2222","white","#1f5e1f"]},
        }.items()
     },
+    **(
+        {
+            "LST median (Landsat)": _gradient_legend(
+                "LST median (Landsat)",
+                ["#313695","#4575b4","#abd9e9","#ffffbf","#fdae61","#a50026"],
+                15, 45, unit="°C",
+                note=f"Target season {_lst_cfg['target_year']} — Landsat 8/9 C2 L2SP",
+            ),
+            "LST anomaly (Landsat)": _gradient_legend(
+                "LST anomaly (Landsat)",
+                ["#313695","#4575b4","#e0f3f8","#ffffff","#fee090","#a50026"],
+                -5, 5, unit="°C",
+                note="Target minus baseline median; blue = cooler than normal",
+            ),
+            "LST stress class (Landsat)": _categorical_legend(
+                "Thermal stress class",
+                [(0, "No valid data",          "#888888"),
+                 (1, "Near-normal",            "#2ca25f"),
+                 (2, "Moderate warm anomaly",  "#feb24c"),
+                 (3, "Strong warm anomaly",    "#de2d26")],
+            ),
+        }
+        if _lst_cfg else {}
+    ),
 }
 
 # Diagnostic: per-class pixel count and percentage over the AOI.
@@ -640,6 +675,21 @@ try:
     for _band, _params in VIS_CHANGE.items():
         _add_ee_layer(change_img.select(_band), _params, _band, show=False)
 
+    # Landsat LST layers — hidden by default; only added when landsat: block present
+    if lst_products:
+        _LST_PALETTE  = ["#313695","#4575b4","#abd9e9","#ffffbf","#fdae61","#a50026"]
+        _ANOM_PALETTE = ["#313695","#4575b4","#e0f3f8","#ffffff","#fee090","#a50026"]
+        _STRESS_PALETTE = ["#888888","#2ca25f","#feb24c","#de2d26"]
+        _add_ee_layer(lst_products["lst_median"],
+                      {"min": 15, "max": 45, "palette": _LST_PALETTE},
+                      "LST median (Landsat)", show=False)
+        _add_ee_layer(lst_products["lst_anomaly"],
+                      {"min": -5, "max": 5, "palette": _ANOM_PALETTE},
+                      "LST anomaly (Landsat)", show=False)
+        _add_ee_layer(lst_products["lst_stress"],
+                      {"min": 0, "max": 3, "palette": _STRESS_PALETTE},
+                      "LST stress class (Landsat)", show=False)
+
     # AOI outline as a true vector overlay (clearer than an EE tile mask)
     folium.GeoJson(
         aoi.getInfo(),
@@ -655,7 +705,7 @@ try:
         f'{html}</div>'
         for n, html in _LEGENDS.items()
     )
-    _any_visible_init = "block" if _visible_on_load else "none"
+    _any_visible_init = "none" if _visible_on_load else "block"
     _legend_outer = (
         '<div id="dyn-legend" style="'
         'position:fixed;bottom:30px;right:30px;z-index:9999;'
@@ -672,9 +722,16 @@ try:
 
     _id_map_js  = json.dumps({n: _safe_id(n) for n in _LEGENDS})
     _map_var    = fmap.get_name()
+    # Raw JS only — no <script> wrapper. folium embeds this inside its own
+    # <script> block, so adding wrapper tags would create nested <script> tags
+    # which cause the browser to close the outer block early and never run
+    # the L.map() initialisation. The poll loop handles the case where this
+    # code executes before the map variable has been assigned.
     _dyn_script = f"""
-<script>
-(function() {{
+(function poll() {{
+  var m = window['{_map_var}'];
+  if (!m) {{ setTimeout(poll, 50); return; }}
+
   var ID_MAP = {_id_map_js};
 
   function refresh() {{
@@ -694,12 +751,10 @@ try:
     refresh();
   }}
 
-  var m = window['{_map_var}'];
-  if (!m) return;
   m.on('overlayadd',    function(e) {{ setLayer(e.name, true);  }});
   m.on('overlayremove', function(e) {{ setLayer(e.name, false); }});
+  refresh();
 }})();
-</script>
 """
     fmap.get_root().script.add_child(folium.Element(_dyn_script))
 
