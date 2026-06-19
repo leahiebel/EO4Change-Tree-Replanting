@@ -229,7 +229,8 @@ def add_requested_biophys(img: ee.Image) -> ee.Image:
     return add_biophys_proxies(img)   # addBands — does not drop existing bands
 
 # ── gee_biophys integration point ────────────────────────────────────────────
-# To replace the proxies above with the full neural-network model, uncomment:
+# To replace the proxies above with the full neural-network model, set up
+# gee_biophys.py (see --biophys-method flag) and uncomment:
 #
 #   import gee_biophys
 #   results = gee_biophys.retrieve(cfg)
@@ -468,6 +469,88 @@ ESTAB_CLASSES = [
 ESTAB_PALETTE = [c for _, _, c in sorted(ESTAB_CLASSES)]
 VIS_ESTAB = {"min": 0, "max": 3, "palette": ESTAB_PALETTE}
 
+# ── Per-layer legend content ──────────────────────────────────────────────────
+def _safe_id(name: str) -> str:
+    return "leg-" + "".join(c if c.isalnum() else "_" for c in name)
+
+def _gradient_legend(title: str, palette: list, vmin: float, vmax: float,
+                     unit: str = "", note: str = "") -> str:
+    grad = ", ".join(palette)
+    mid  = (vmin + vmax) / 2
+    return (
+        f'<div style="font-weight:600;margin-bottom:5px;">{title}</div>'
+        f'<div style="height:12px;background:linear-gradient(to right,{grad});'
+        f'border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div>'
+        f'<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">'
+        f'  <span>{vmin:.2g}</span><span>{mid:.2g}</span><span>{vmax:.2g}</span>'
+        f'</div>'
+        + (f'<div style="font-size:10px;color:#555;">{unit}</div>' if unit else '')
+        + (f'<div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">{note}</div>' if note else '')
+    )
+
+def _categorical_legend(title: str, classes: list, note: str = "") -> str:
+    rows = "".join(
+        f'<div style="display:flex;align-items:center;margin:2px 0;">'
+        f'<span style="display:inline-block;width:14px;height:14px;background:{c};'
+        f'border:1px solid #555;margin-right:6px;flex-shrink:0;"></span>'
+        f'<span style="font-size:11px;">{idx} — {lbl}</span></div>'
+        for idx, lbl, c in classes
+    )
+    return (
+        f'<div style="font-weight:600;margin-bottom:5px;">{title}</div>'
+        + rows
+        + (f'<div style="font-size:10px;color:#777;font-style:italic;margin-top:5px;">{note}</div>' if note else '')
+    )
+
+def _text_legend(title: str, note: str = "") -> str:
+    return (
+        f'<div style="font-weight:600;margin-bottom:4px;">{title}</div>'
+        f'<div style="font-size:10px;color:#777;font-style:italic;">{note or "No radiometric scale."}</div>'
+    )
+
+_early_label  = f"Early RGB ({EARLY_YEARS[0]}–{EARLY_YEARS[1]})"
+_recent_label = f"Recent RGB ({RECENT_YEARS[0]}–{RECENT_YEARS[1]})"
+
+_LEGENDS: dict = {
+    "RGB":    _text_legend("True-colour composite (B4/B3/B2)"),
+    "NDVI":   _gradient_legend("NDVI", ["saddlebrown","khaki","limegreen","darkgreen"],
+                               -0.1, 0.85,
+                               note="Vegetation greenness — young forest ≈ 0.3–0.6"),
+    "LAI-e":  _gradient_legend("LAI-e (proxy)", ["white","yellow","limegreen","darkgreen"],
+                               0, 6, unit="m²/m²",
+                               note="Linear proxy: 3.618 × NDVI − 0.118"),
+    "FCOVER": _gradient_legend("FCOVER (proxy)", ["white","lightgreen","forestgreen"],
+                               0, 1,
+                               note="Green vegetation cover fraction"),
+    "BSI":    _gradient_legend("BSI", ["darkgreen","white","orange","saddlebrown"],
+                               -0.3, 0.4,
+                               note="High positive = exposed bare soil"),
+    "NDWI":   _gradient_legend("NDWI", ["lightyellow","powderblue","steelblue","navy"],
+                               -0.3, 0.5,
+                               note="Open water / flooding (McFeeters 1996)"),
+    "NBR":    _gradient_legend("NBR", ["#7d2222","#cc6600","#ffe066","#a8d666","#1f5e1f"],
+                               -0.3, 0.7,
+                               note="Low = burned or stressed vegetation"),
+    "Establishment status": _categorical_legend(
+        "Establishment status", ESTAB_CLASSES,
+        note="Greening signal only — not proof of tree survival"),
+    _early_label:  _text_legend(_early_label,
+                                f"Months {CMP_MONTHS[0]}–{CMP_MONTHS[1]-1} seasonal median"),
+    _recent_label: _text_legend(_recent_label,
+                                f"Months {CMP_MONTHS[0]}–{CMP_MONTHS[1]-1} seasonal median"),
+    **{band: _gradient_legend(band, params["palette"], params["min"], params["max"],
+                              note="Change = recent − early composite")
+       for band, params in {
+           "NDVI_change": {"min":-0.3,"max":0.3,"palette":["#7d2222","white","#1f5e1f"]},
+           "NDRE_change": {"min":-0.3,"max":0.3,"palette":["#7d2222","white","#1f5e1f"]},
+           "NDMI_change": {"min":-0.3,"max":0.3,"palette":["#7d2222","white","#1f5e1f"]},
+           "BSI_change":  {"min":-0.3,"max":0.3,"palette":["#1f5e1f","white","#7d2222"]},
+           "NDWI_change": {"min":-0.3,"max":0.3,"palette":["saddlebrown","white","steelblue"]},
+           "NBR_change":  {"min":-0.3,"max":0.3,"palette":["#7d2222","white","#1f5e1f"]},
+       }.items()
+    },
+}
+
 # Diagnostic: per-class pixel count and percentage over the AOI.
 try:
     _hist = establishment_status.reduceRegion(
@@ -524,8 +607,12 @@ try:
     fmap = folium.Map(location=_center, zoom_start=10, tiles="OpenStreetMap",
                       control_scale=True)
 
+    _visible_on_load: list = []
+
     def _add_ee_layer(ee_image: ee.Image, params: dict, name: str,
-                      show: bool = True) -> None:
+                      show: bool = False) -> None:
+        if show:
+            _visible_on_load.append(name)
         map_id = ee_image.getMapId(params)
         folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
@@ -536,9 +623,10 @@ try:
             show=show,
         ).add_to(fmap)
 
-    # Single-period summer raster (visible by default)
+    # Single-period rasters — only RGB on by default; others toggled from layer panel
     for title, vc in VIS_AVAILABLE.items():
-        _add_ee_layer(raster.select(vc["bands"]), vc["params"], title, show=True)
+        _add_ee_layer(raster.select(vc["bands"]), vc["params"], title,
+                      show=(title == "RGB"))
     # Establishment status (M3) — headline product, visible by default
     _add_ee_layer(establishment_status, VIS_ESTAB, "Establishment status",
                   show=True)
@@ -559,29 +647,61 @@ try:
         style_function=lambda _f: {"color": "red", "weight": 2, "fillOpacity": 0},
     ).add_to(fmap)
 
-    # Floating HTML legend for the categorical "Establishment status" layer.
-    _legend_rows = "".join(
-        f'<div style="display:flex;align-items:center;margin:2px 0;">'
-        f'  <span style="display:inline-block;width:14px;height:14px;'
-        f'background:{c};border:1px solid #555;margin-right:6px;"></span>'
-        f'  <span>{idx} — {name}</span>'
-        f'</div>'
-        for idx, name, c in ESTAB_CLASSES
+    # ── Dynamic per-layer legend ───────────────────────────────────────────────
+    # One div per layer; shown/hidden via JS overlayadd / overlayremove events.
+    _inner_divs = "\n".join(
+        f'<div id="{_safe_id(n)}" '
+        f'style="display:{"block" if n in _visible_on_load else "none"};">'
+        f'{html}</div>'
+        for n, html in _LEGENDS.items()
     )
-    _legend_html = (
-        '<div style="position: fixed; bottom: 30px; right: 30px; z-index: 9999;'
-        '  background: rgba(255,255,255,0.95); padding: 10px 12px;'
-        '  border: 1px solid #888; border-radius: 4px;'
-        '  font: 12px/1.3 system-ui, sans-serif; max-width: 240px;'
-        '  box-shadow: 0 2px 6px rgba(0,0,0,0.2);">'
-        '<div style="font-weight:600;margin-bottom:6px;">Establishment status</div>'
-        f'{_legend_rows}'
-        '<div style="font-size:10px;color:#666;margin-top:6px;">'
-        'Greening signal only — not proof of tree survival.'
-        '</div>'
-        '</div>'
+    _any_visible_init = "block" if _visible_on_load else "none"
+    _legend_outer = (
+        '<div id="dyn-legend" style="'
+        'position:fixed;bottom:30px;right:30px;z-index:9999;'
+        'background:rgba(255,255,255,0.95);padding:10px 12px;'
+        'border:1px solid #888;border-radius:4px;'
+        'font:12px/1.3 system-ui,sans-serif;max-width:260px;'
+        'box-shadow:0 2px 6px rgba(0,0,0,0.2);">'
+        + _inner_divs
+        + f'<div id="dyn-legend-empty" style="display:{_any_visible_init};font-size:11px;color:#888;">'
+          f'Toggle a layer to see its legend.</div>'
+        + '</div>'
     )
-    fmap.get_root().html.add_child(folium.Element(_legend_html))
+    fmap.get_root().html.add_child(folium.Element(_legend_outer))
+
+    _id_map_js  = json.dumps({n: _safe_id(n) for n in _LEGENDS})
+    _map_var    = fmap.get_name()
+    _dyn_script = f"""
+<script>
+(function() {{
+  var ID_MAP = {_id_map_js};
+
+  function refresh() {{
+    var any = Object.values(ID_MAP).some(function(id) {{
+      var el = document.getElementById(id);
+      return el && el.style.display !== 'none';
+    }});
+    var emp = document.getElementById('dyn-legend-empty');
+    if (emp) emp.style.display = any ? 'none' : 'block';
+  }}
+
+  function setLayer(name, visible) {{
+    var id = ID_MAP[name];
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (el) el.style.display = visible ? 'block' : 'none';
+    refresh();
+  }}
+
+  var m = window['{_map_var}'];
+  if (!m) return;
+  m.on('overlayadd',    function(e) {{ setLayer(e.name, true);  }});
+  m.on('overlayremove', function(e) {{ setLayer(e.name, false); }});
+}})();
+</script>
+"""
+    fmap.get_root().script.add_child(folium.Element(_dyn_script))
 
     folium.LayerControl(collapsed=False).add_to(fmap)
     out_map = SRC_DIR / f"map_{region_name}.html"
