@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_25af617476ffac85ecb83d06f21eca86 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    <div id="dyn-legend" style="position:fixed;bottom:30px;right:30px;z-index:9999;background:rgba(255,255,255,0.95);padding:10px 12px;border:1px solid #888;border-radius:4px;font:12px/1.3 system-ui,sans-serif;max-width:260px;box-shadow:0 2px 6px rgba(0,0,0,0.2);"><div id="leg-RGB" style="display:block;"><div style="font-weight:600;margin-bottom:4px;">True-colour composite (B4/B3/B2)</div><div style="font-size:10px;color:#777;font-style:italic;">No radiometric scale.</div></div>
+<div id="leg-NDVI" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">NDVI</div><div style="height:12px;background:linear-gradient(to right,saddlebrown, khaki, limegreen, darkgreen);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.1</span><span>0.38</span><span>0.85</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Vegetation greenness — young forest ≈ 0.3–0.6</div></div>
+<div id="leg-LAI_e" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">LAI-e (proxy)</div><div style="height:12px;background:linear-gradient(to right,white, yellow, limegreen, darkgreen);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>0</span><span>3</span><span>6</span></div><div style="font-size:10px;color:#555;">m²/m²</div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Linear proxy: 3.618 × NDVI − 0.118</div></div>
+<div id="leg-FCOVER" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">FCOVER (proxy)</div><div style="height:12px;background:linear-gradient(to right,white, lightgreen, forestgreen);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>0</span><span>0.5</span><span>1</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Green vegetation cover fraction</div></div>
+<div id="leg-BSI" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">BSI</div><div style="height:12px;background:linear-gradient(to right,darkgreen, white, orange, saddlebrown);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0.05</span><span>0.4</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">High positive = exposed bare soil</div></div>
+<div id="leg-NDWI" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">NDWI</div><div style="height:12px;background:linear-gradient(to right,lightyellow, powderblue, steelblue, navy);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0.1</span><span>0.5</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Open water / flooding (McFeeters 1996)</div></div>
+<div id="leg-NBR" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">NBR</div><div style="height:12px;background:linear-gradient(to right,#7d2222, #cc6600, #ffe066, #a8d666, #1f5e1f);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0.2</span><span>0.7</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Low = burned or stressed vegetation</div></div>
+<div id="leg-Establishment_status" style="display:block;"><div style="font-weight:600;margin-bottom:5px;">Establishment status</div><div style="display:flex;align-items:center;margin:2px 0;"><span style="display:inline-block;width:14px;height:14px;background:#888888;border:1px solid #555;margin-right:6px;flex-shrink:0;"></span><span style="font-size:11px;">0 — Uncertain</span></div><div style="display:flex;align-items:center;margin:2px 0;"><span style="display:inline-block;width:14px;height:14px;background:#1f5e1f;border:1px solid #555;margin-right:6px;flex-shrink:0;"></span><span style="font-size:11px;">1 — Good establishment</span></div><div style="display:flex;align-items:center;margin:2px 0;"><span style="display:inline-block;width:14px;height:14px;background:#a8d666;border:1px solid #555;margin-right:6px;flex-shrink:0;"></span><span style="font-size:11px;">2 — Moderate establishment</span></div><div style="display:flex;align-items:center;margin:2px 0;"><span style="display:inline-block;width:14px;height:14px;background:#c47a1e;border:1px solid #555;margin-right:6px;flex-shrink:0;"></span><span style="font-size:11px;">3 — Weak / bare-soil risk</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:5px;">Greening signal only — not proof of tree survival</div></div>
+<div id="leg-Early_RGB__2018_2020_" style="display:none;"><div style="font-weight:600;margin-bottom:4px;">Early RGB (2018–2020)</div><div style="font-size:10px;color:#777;font-style:italic;">Months 5–8 seasonal median</div></div>
+<div id="leg-Recent_RGB__2022_2023_" style="display:none;"><div style="font-weight:600;margin-bottom:4px;">Recent RGB (2022–2023)</div><div style="font-size:10px;color:#777;font-style:italic;">Months 5–8 seasonal median</div></div>
+<div id="leg-NDVI_change" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">NDVI_change</div><div style="height:12px;background:linear-gradient(to right,#7d2222, white, #1f5e1f);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0</span><span>0.3</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Change = recent − early composite</div></div>
+<div id="leg-NDRE_change" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">NDRE_change</div><div style="height:12px;background:linear-gradient(to right,#7d2222, white, #1f5e1f);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0</span><span>0.3</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Change = recent − early composite</div></div>
+<div id="leg-NDMI_change" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">NDMI_change</div><div style="height:12px;background:linear-gradient(to right,#7d2222, white, #1f5e1f);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0</span><span>0.3</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Change = recent − early composite</div></div>
+<div id="leg-BSI_change" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">BSI_change</div><div style="height:12px;background:linear-gradient(to right,#1f5e1f, white, #7d2222);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0</span><span>0.3</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Change = recent − early composite</div></div>
+<div id="leg-NDWI_change" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">NDWI_change</div><div style="height:12px;background:linear-gradient(to right,saddlebrown, white, steelblue);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0</span><span>0.3</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Change = recent − early composite</div></div>
+<div id="leg-NBR_change" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">NBR_change</div><div style="height:12px;background:linear-gradient(to right,#7d2222, white, #1f5e1f);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-0.3</span><span>0</span><span>0.3</span></div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Change = recent − early composite</div></div>
+<div id="leg-LST_median__Landsat_" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">LST median (Landsat)</div><div style="height:12px;background:linear-gradient(to right,#313695, #4575b4, #abd9e9, #ffffbf, #fdae61, #a50026);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>15</span><span>30</span><span>45</span></div><div style="font-size:10px;color:#555;">°C</div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Target season 2023 — Landsat 8/9 C2 L2SP</div></div>
+<div id="leg-LST_anomaly__Landsat_" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">LST anomaly (Landsat)</div><div style="height:12px;background:linear-gradient(to right,#313695, #4575b4, #e0f3f8, #ffffff, #fee090, #a50026);border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">  <span>-5</span><span>0</span><span>5</span></div><div style="font-size:10px;color:#555;">°C</div><div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">Target minus baseline median; blue = cooler than normal</div></div>
+<div id="leg-LST_stress_class__Landsat_" style="display:none;"><div style="font-weight:600;margin-bottom:5px;">Thermal stress class</div><div style="display:flex;align-items:center;margin:2px 0;"><span style="display:inline-block;width:14px;height:14px;background:#888888;border:1px solid #555;margin-right:6px;flex-shrink:0;"></span><span style="font-size:11px;">0 — No valid data</span></div><div style="display:flex;align-items:center;margin:2px 0;"><span style="display:inline-block;width:14px;height:14px;background:#2ca25f;border:1px solid #555;margin-right:6px;flex-shrink:0;"></span><span style="font-size:11px;">1 — Near-normal</span></div><div style="display:flex;align-items:center;margin:2px 0;"><span style="display:inline-block;width:14px;height:14px;background:#feb24c;border:1px solid #555;margin-right:6px;flex-shrink:0;"></span><span style="font-size:11px;">2 — Moderate warm anomaly</span></div><div style="display:flex;align-items:center;margin:2px 0;"><span style="display:inline-block;width:14px;height:14px;background:#de2d26;border:1px solid #555;margin-right:6px;flex-shrink:0;"></span><span style="font-size:11px;">3 — Strong warm anomaly</span></div></div><div id="dyn-legend-empty" style="display:none;font-size:11px;color:#888;">Toggle a layer to see its legend.</div></div>
+    
+            <div class="folium-map" id="map_25af617476ffac85ecb83d06f21eca86" ></div>
+        
+</body>
+<script>
+    
+    
+(function poll() {
+  var m = window['map_25af617476ffac85ecb83d06f21eca86'];
+  if (!m) { setTimeout(poll, 50); return; }
+
+  var ID_MAP = {"RGB": "leg-RGB", "NDVI": "leg-NDVI", "LAI-e": "leg-LAI_e", "FCOVER": "leg-FCOVER", "BSI": "leg-BSI", "NDWI": "leg-NDWI", "NBR": "leg-NBR", "Establishment status": "leg-Establishment_status", "Early RGB (2018\u20132020)": "leg-Early_RGB__2018_2020_", "Recent RGB (2022\u20132023)": "leg-Recent_RGB__2022_2023_", "NDVI_change": "leg-NDVI_change", "NDRE_change": "leg-NDRE_change", "NDMI_change": "leg-NDMI_change", "BSI_change": "leg-BSI_change", "NDWI_change": "leg-NDWI_change", "NBR_change": "leg-NBR_change", "LST median (Landsat)": "leg-LST_median__Landsat_", "LST anomaly (Landsat)": "leg-LST_anomaly__Landsat_", "LST stress class (Landsat)": "leg-LST_stress_class__Landsat_"};
+
+  function refresh() {
+    var any = Object.values(ID_MAP).some(function(id) {
+      var el = document.getElementById(id);
+      return el && el.style.display !== 'none';
+    });
+    var emp = document.getElementById('dyn-legend-empty');
+    if (emp) emp.style.display = any ? 'none' : 'block';
+  }
+
+  function setLayer(name, visible) {
+    var id = ID_MAP[name];
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (el) el.style.display = visible ? 'block' : 'none';
+    refresh();
+  }
+
+  m.on('overlayadd',    function(e) { setLayer(e.name, true);  });
+  m.on('overlayremove', function(e) { setLayer(e.name, false); });
+  refresh();
+})();
+    
+            var map_25af617476ffac85ecb83d06f21eca86 = L.map(
+                "map_25af617476ffac85ecb83d06f21eca86",
+                {
+                    center: [55.866781010826585, 9.795198500000001],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 10,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+            L.control.scale().addTo(map_25af617476ffac85ecb83d06f21eca86);
+
+            
+
+        
+    
+            var tile_layer_c6399c65798624eae9779fd3d0e1f90d = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 19,
+  "maxNativeZoom": 19,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_c6399c65798624eae9779fd3d0e1f90d.addTo(map_25af617476ffac85ecb83d06f21eca86);
+        
+    
+            var tile_layer_8a132f60920c8645a263c51ccb1831b7 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/c041b20117e09f3d67132b56469e3e7b-061856552b074f9cd678030bbfe43bb1/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_8a132f60920c8645a263c51ccb1831b7.addTo(map_25af617476ffac85ecb83d06f21eca86);
+        
+    
+            var tile_layer_7db07e85c0ad479f395b166f69e4f190 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/8c99881f3a1de50e8135e60c0c67c004-8f355d441dd88d3c8fe26039a47c64fd/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_4b7bb61a123ff0b92716b2ccde1e0edf = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/80e4901a0d621407bd170f4863a90d7e-54e4d9d9dc0b06ae0159da3319924139/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_f513ecbd95c2c173fd9edaf7f9d604e0 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/cf5ba6737be1ffd3f892602a886ed1c3-ae2bf5c3f693a06de6526f5d15f54f74/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_b75d9f586ace8ddfa9e24247e2144050 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/a05bfcc9ef231d98d8a46a26a4a4222e-3163d82e5d3a08d81680a4907db28ce4/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_90a5774cbf9f126c7ba206a9bd043fd6 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/ae385d73e89453f88515dc464ed0782f-830eeea6d554a2f8f49683ef03079bd2/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_603e00cf2a423883918b60bd8fdc5f08 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/0ee3d8fe67fb5af2b3da323ab5cfedd8-eb4fd9a82294ed399601293980a2f2fd/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_85ce7bf03111c278dfd43cde449d539b = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/541a64684d3375d727d745fab082ad98-87ecb916e4d4695dbf523aea92481065/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_85ce7bf03111c278dfd43cde449d539b.addTo(map_25af617476ffac85ecb83d06f21eca86);
+        
+    
+            var tile_layer_d2bddca0c7c81ef9bc2296b57aac0c29 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/106ce9dfb928f8139dc51d9f8bab8dd3-60a867c8b4bfd83cf5b3a33f56d18b71/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_2c1dcabe9843ad85b02cd4bf019c3973 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/7b3ddf2b1a3ee10bb2a83e8922c414a3-1f74ddbe6a136cea3a9f62e4dfb10504/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_c245dabae66287dc1e78b0e1b1f2a58f = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/63f0a2fbaee8a5378b99b713290417f6-fcec1e481ba50b02669e11031be6b4e7/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_91dbc45b2bf4404e5e5eb9c4e170694c = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/33ab2d14d29eefc57d376f75f6138852-d34cb671e8f70bfbc5b2e3165d172e1e/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_8fa0b2774ce53f6c588ded8fad599985 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/e6c3e634d02d71b7983acedee451eaa9-46676d6bee634bf8ee08a083b3cd2760/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_18378640a55135f597642dc6f0931c09 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/5ad731bad3dca62905748e57fe4ae916-7de44d1309c9a7b12f7b5294c0bbb7c2/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_2fecdb119416f16f4389ae948a5d9ed9 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/9bdf39215ceaac4cbd48968947f71f9a-2f0cd5be127f912265dc9b3aad562aea/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_554f8a56e744d624db8806cf5c4b5dd1 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/77e4adb565cbceefec58329e9204780d-50554fce95332e65a0fa154e5c3fd165/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_a14f973f38332ff96eee4587c451c543 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/4a4891277c3660c55337aaf051c0d40b-aa529f744ad6be4229057362e8765fa0/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_a9a0a3548a3bb016556528d3e04f7faa = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/d769f97f2f88935f60a724fe1e6165cf-9fc462cad41adbf2097f152e34fb5e0c/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            var tile_layer_09cd2a87825209fb735c191b2fb9c85b = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/eo4change-ex/maps/545715b0f84b0cb223875796bfc38fac-2c573e7749d47bbdabed2643a73b83ea/tiles/{z}/{x}/{y}",
+                {
+  "minZoom": 0,
+  "maxZoom": 18,
+  "maxNativeZoom": 18,
+  "noWrap": false,
+  "attribution": "Google Earth Engine",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+        function geo_json_6b5635bc8147c714ffdd8aae036041eb_styler(feature) {
+            switch(feature.id) {
+                default:
+                    return {"color": "red", "fillOpacity": 0, "weight": 2};
+            }
+        }
+
+        function geo_json_6b5635bc8147c714ffdd8aae036041eb_onEachFeature(feature, layer) {
+
+            layer.on({
+            });
+        };
+        var geo_json_6b5635bc8147c714ffdd8aae036041eb = L.geoJson(null, {
+                onEachFeature: geo_json_6b5635bc8147c714ffdd8aae036041eb_onEachFeature,
+            
+                style: geo_json_6b5635bc8147c714ffdd8aae036041eb_styler,
+            ...{
+}
+        });
+
+        function geo_json_6b5635bc8147c714ffdd8aae036041eb_add (data) {
+            geo_json_6b5635bc8147c714ffdd8aae036041eb
+                .addData(data);
+        }
+            geo_json_6b5635bc8147c714ffdd8aae036041eb_add({"features": [{"geometry": {"coordinates": [[[9.767893, 55.858606], [9.822504, 55.858606], [9.822504, 55.874953], [9.767893, 55.874953], [9.767893, 55.858606]]], "type": "Polygon"}, "id": "0", "type": "Feature"}], "type": "FeatureCollection"});
+
+        
+    
+            geo_json_6b5635bc8147c714ffdd8aae036041eb.addTo(map_25af617476ffac85ecb83d06f21eca86);
+        
+    
+            var layer_control_522e5c45b97582460b678e0c65a0a895_layers = {
+                base_layers : {
+                    "openstreetmap" : tile_layer_c6399c65798624eae9779fd3d0e1f90d,
+                },
+                overlays :  {
+                    "RGB" : tile_layer_8a132f60920c8645a263c51ccb1831b7,
+                    "NDVI" : tile_layer_7db07e85c0ad479f395b166f69e4f190,
+                    "LAI-e" : tile_layer_4b7bb61a123ff0b92716b2ccde1e0edf,
+                    "FCOVER" : tile_layer_f513ecbd95c2c173fd9edaf7f9d604e0,
+                    "BSI" : tile_layer_b75d9f586ace8ddfa9e24247e2144050,
+                    "NDWI" : tile_layer_90a5774cbf9f126c7ba206a9bd043fd6,
+                    "NBR" : tile_layer_603e00cf2a423883918b60bd8fdc5f08,
+                    "Establishment status" : tile_layer_85ce7bf03111c278dfd43cde449d539b,
+                    "Early RGB (2018\u20132020)" : tile_layer_d2bddca0c7c81ef9bc2296b57aac0c29,
+                    "Recent RGB (2022\u20132023)" : tile_layer_2c1dcabe9843ad85b02cd4bf019c3973,
+                    "NDVI_change" : tile_layer_c245dabae66287dc1e78b0e1b1f2a58f,
+                    "NDRE_change" : tile_layer_91dbc45b2bf4404e5e5eb9c4e170694c,
+                    "NDMI_change" : tile_layer_8fa0b2774ce53f6c588ded8fad599985,
+                    "BSI_change" : tile_layer_18378640a55135f597642dc6f0931c09,
+                    "NDWI_change" : tile_layer_2fecdb119416f16f4389ae948a5d9ed9,
+                    "NBR_change" : tile_layer_554f8a56e744d624db8806cf5c4b5dd1,
+                    "LST median (Landsat)" : tile_layer_a14f973f38332ff96eee4587c451c543,
+                    "LST anomaly (Landsat)" : tile_layer_a9a0a3548a3bb016556528d3e04f7faa,
+                    "LST stress class (Landsat)" : tile_layer_09cd2a87825209fb735c191b2fb9c85b,
+                    "AOI" : geo_json_6b5635bc8147c714ffdd8aae036041eb,
+                },
+            };
+            let layer_control_522e5c45b97582460b678e0c65a0a895 = L.control.layers(
+                layer_control_522e5c45b97582460b678e0c65a0a895_layers.base_layers,
+                layer_control_522e5c45b97582460b678e0c65a0a895_layers.overlays,
+                {
+  "position": "topright",
+  "collapsed": false,
+  "autoZIndex": true,
+}
+            ).addTo(map_25af617476ffac85ecb83d06f21eca86);
+
+        
+</script>
+</html>
