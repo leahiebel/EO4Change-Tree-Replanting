@@ -1,0 +1,10 @@
+earthengine-api
+geopandas
+rasterio
+pandas
+pyyaml
+shapely
+pyproj
+fiona
+pytest
+

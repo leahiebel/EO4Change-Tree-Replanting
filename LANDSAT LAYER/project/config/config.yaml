@@ -1,0 +1,39 @@
+earth_engine_project: "replace-with-project-id"
+
+aoi_path: "/path/to/portugal_domain.geojson"
+forest_path: "/path/to/reforestation_polygons.geojson"
+control_path: null
+
+start_date: "2013-04-01"
+end_date: "2026-12-31"
+
+season_start_month: 6
+season_end_month: 9
+
+baseline_start_year: 2013
+baseline_end_year: 2019
+target_year: 2025
+
+max_scene_cloud_cover: 70
+min_cloud_distance_km: 1.0
+max_st_uncertainty_k: 2.0
+mask_water: true
+
+output_crs: "EPSG:3763"
+export_scale_m: 30
+nodata_value: -9999
+
+output_directory: "data/outputs"
+gcs_bucket: null
+gcs_prefix: "eo4c/lst"
+drive_folder: "EO4C_LST_exports"
+
+wait_for_exports: false
+export_yearly_timeseries: true
+
+zscore_moderate_threshold: 1.0
+zscore_strong_threshold: 2.0
+
+prototype_tile_layers: true
+titiler_base_url: "https://tile-server.example.com/cog/tiles"
+
