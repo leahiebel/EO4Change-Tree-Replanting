@@ -343,6 +343,17 @@ else:
         v = row.get("NDVI")
         print(f"  {label:12s}  NDVI={v:.3f}" if v is not None else f"  {label:12s}  (no data)")
 
+# ── CSV export — time-series data ────────────────────────────────────────────
+if records:
+    import csv as _csv
+    _ts_csv = SRC_DIR / f"timeseries_{region_name}.csv"
+    _fields = ["date", "label"] + ALL_BANDS
+    with open(_ts_csv, "w", newline="") as _f:
+        _w = _csv.DictWriter(_f, fieldnames=_fields, extrasaction="ignore")
+        _w.writeheader()
+        _w.writerows(records)
+    print(f"Saved → {_ts_csv}")
+
 # ── Plots — spectral & biophysical time series ───────────────────────────────
 # Skipped entirely in --map-only mode.
 PLANTING = datetime.strptime(REF_DATE, "%Y-%m-%d") if REF_DATE else None
@@ -469,6 +480,17 @@ ESTAB_CLASSES = [
 ESTAB_PALETTE = [c for _, _, c in sorted(ESTAB_CLASSES)]
 VIS_ESTAB = {"min": 0, "max": 3, "palette": ESTAB_PALETTE}
 
+# ── Landsat LST layer (optional) ─────────────────────────────────────────────
+lst_products = None
+_lst_cfg = cfg.get("landsat")
+if _lst_cfg:
+    from landsat_lst import build_lst_layer
+    print("Building Landsat LST layers…")
+    try:
+        lst_products = build_lst_layer(aoi, _lst_cfg)
+    except Exception as _e:
+        print(f"  (LST build failed: {_e})")
+
 # ── Per-layer legend content ──────────────────────────────────────────────────
 def _safe_id(name: str) -> str:
     return "leg-" + "".join(c if c.isalnum() else "_" for c in name)
@@ -549,6 +571,30 @@ _LEGENDS: dict = {
            "NBR_change":  {"min":-0.3,"max":0.3,"palette":["#7d2222","white","#1f5e1f"]},
        }.items()
     },
+    **(
+        {
+            "LST median (Landsat)": _gradient_legend(
+                "LST median (Landsat)",
+                ["#313695","#4575b4","#abd9e9","#ffffbf","#fdae61","#a50026"],
+                15, 45, unit="°C",
+                note=f"Target season {_lst_cfg['target_year']} — Landsat 8/9 C2 L2SP",
+            ),
+            "LST anomaly (Landsat)": _gradient_legend(
+                "LST anomaly (Landsat)",
+                ["#313695","#4575b4","#e0f3f8","#ffffff","#fee090","#a50026"],
+                -5, 5, unit="°C",
+                note="Target minus baseline median; blue = cooler than normal",
+            ),
+            "LST stress class (Landsat)": _categorical_legend(
+                "Thermal stress class",
+                [(0, "No valid data",          "#888888"),
+                 (1, "Near-normal",            "#2ca25f"),
+                 (2, "Moderate warm anomaly",  "#feb24c"),
+                 (3, "Strong warm anomaly",    "#de2d26")],
+            ),
+        }
+        if _lst_cfg else {}
+    ),
 }
 
 # Diagnostic: per-class pixel count and percentage over the AOI.
@@ -640,6 +686,21 @@ try:
     for _band, _params in VIS_CHANGE.items():
         _add_ee_layer(change_img.select(_band), _params, _band, show=False)
 
+    # Landsat LST layers — hidden by default; only added when landsat: block present
+    if lst_products:
+        _LST_PALETTE  = ["#313695","#4575b4","#abd9e9","#ffffbf","#fdae61","#a50026"]
+        _ANOM_PALETTE = ["#313695","#4575b4","#e0f3f8","#ffffff","#fee090","#a50026"]
+        _STRESS_PALETTE = ["#888888","#2ca25f","#feb24c","#de2d26"]
+        _add_ee_layer(lst_products["lst_median"],
+                      {"min": 15, "max": 45, "palette": _LST_PALETTE},
+                      "LST median (Landsat)", show=False)
+        _add_ee_layer(lst_products["lst_anomaly"],
+                      {"min": -5, "max": 5, "palette": _ANOM_PALETTE},
+                      "LST anomaly (Landsat)", show=False)
+        _add_ee_layer(lst_products["lst_stress"],
+                      {"min": 0, "max": 3, "palette": _STRESS_PALETTE},
+                      "LST stress class (Landsat)", show=False)
+
     # AOI outline as a true vector overlay (clearer than an EE tile mask)
     folium.GeoJson(
         aoi.getInfo(),
@@ -655,7 +716,7 @@ try:
         f'{html}</div>'
         for n, html in _LEGENDS.items()
     )
-    _any_visible_init = "block" if _visible_on_load else "none"
+    _any_visible_init = "none" if _visible_on_load else "block"
     _legend_outer = (
         '<div id="dyn-legend" style="'
         'position:fixed;bottom:30px;right:30px;z-index:9999;'
@@ -672,9 +733,16 @@ try:
 
     _id_map_js  = json.dumps({n: _safe_id(n) for n in _LEGENDS})
     _map_var    = fmap.get_name()
+    # Raw JS only — no <script> wrapper. folium embeds this inside its own
+    # <script> block, so adding wrapper tags would create nested <script> tags
+    # which cause the browser to close the outer block early and never run
+    # the L.map() initialisation. The poll loop handles the case where this
+    # code executes before the map variable has been assigned.
     _dyn_script = f"""
-<script>
-(function() {{
+(function poll() {{
+  var m = window['{_map_var}'];
+  if (!m) {{ setTimeout(poll, 50); return; }}
+
   var ID_MAP = {_id_map_js};
 
   function refresh() {{
@@ -694,14 +762,209 @@ try:
     refresh();
   }}
 
-  var m = window['{_map_var}'];
-  if (!m) return;
   m.on('overlayadd',    function(e) {{ setLayer(e.name, true);  }});
   m.on('overlayremove', function(e) {{ setLayer(e.name, false); }});
+  refresh();
 }})();
-</script>
 """
     fmap.get_root().script.add_child(folium.Element(_dyn_script))
+
+    # ── Interactive time-series side panel ────────────────────────────────────
+    # Chart.js + date adapter + annotation plugin (CDN, loaded in <head>)
+    fmap.get_root().header.add_child(folium.Element(
+        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>\n'
+        '<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>\n'
+        '<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>'
+    ))
+
+    # Embed time-series records as JSON (only the bands we plot)
+    _ts_records_clean = [
+        {k: r.get(k) for k in ["date", "label"] + ALL_BANDS}
+        for r in records
+    ]
+    _ts_records_json   = json.dumps(_ts_records_clean)
+    _ts_layer_vars     = {
+        "RGB":                  ["NDVI"],
+        "NDVI":                 ["NDVI"],
+        "LAI-e":                ["laie"],
+        "FCOVER":               ["fcover"],
+        "BSI":                  ["BSI"],
+        "NDWI":                 ["NDWI"],
+        "NBR":                  ["NBR"],
+        "Establishment status": ["NDVI", "BSI", "NDMI"],
+        _early_label:           ["NDVI"],
+        _recent_label:          ["NDVI"],
+        "NDVI_change":          ["NDVI"],
+        "NDRE_change":          ["NDRE"],
+        "NDMI_change":          ["NDMI"],
+        "BSI_change":           ["BSI"],
+        "NDWI_change":          ["NDWI"],
+        "NBR_change":           ["NBR"],
+    }
+    _ts_layer_vars_json = json.dumps(_ts_layer_vars)
+    _ts_colors_json     = json.dumps({**SPEC_COLORS, **BIOPH_COLORS})
+    _ts_ref_date        = json.dumps(REF_DATE  or "")
+    _ts_ref_label       = json.dumps(REF_LABEL or "")
+    _ts_init_json       = json.dumps(_visible_on_load)
+
+    _ts_panel_html = (
+        '<div id="ts-panel" style="'
+        'position:fixed;left:50px;top:60px;z-index:9998;'
+        'background:rgba(255,255,255,0.97);'
+        'padding:12px 14px;border:1px solid #888;border-radius:4px;'
+        'box-shadow:0 2px 8px rgba(0,0,0,0.25);width:340px;'
+        'font:11px/1.4 system-ui,sans-serif;display:none;">'
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+        '<span id="ts-title" style="font-weight:600;font-size:12px;max-width:280px;'
+        'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>'
+        '<button id="ts-close" style="background:none;border:none;cursor:pointer;'
+        'font-size:18px;line-height:1;color:#555;flex-shrink:0;">×</button>'
+        '</div>'
+        '<div id="ts-no-data" style="display:none;color:#888;font-size:11px;font-style:italic;">'
+        'No time-series data available (re-run without --map-only).</div>'
+        '<div style="position:relative;height:200px;">'
+        '<canvas id="ts-chart"></canvas>'
+        '</div>'
+        '</div>'
+    )
+    fmap.get_root().html.add_child(folium.Element(_ts_panel_html))
+
+    _ts_script = f"""
+(function waitForChart() {{
+  if (typeof Chart === 'undefined') {{ setTimeout(waitForChart, 50); return; }}
+
+  var TS_DATA    = {_ts_records_json};
+  var LAYER_VARS = {_ts_layer_vars_json};
+  var COLORS     = {_ts_colors_json};
+  var REF_DATE   = {_ts_ref_date};
+  var REF_LABEL  = {_ts_ref_label};
+  var INIT_LAYERS = {_ts_init_json};
+
+  var panel   = document.getElementById('ts-panel');
+  var noData  = document.getElementById('ts-no-data');
+  var chartWrap = panel.querySelector('div[style*="height:200px"]');
+  var tsChart = null;
+
+  document.getElementById('ts-close').addEventListener('click', function() {{
+    panel.style.display = 'none';
+  }});
+
+  function showPanel(layerName) {{
+    var vars = LAYER_VARS[layerName];
+    if (!vars || vars.length === 0) return;
+
+    document.getElementById('ts-title').textContent = layerName;
+    panel.style.display = 'block';
+
+    if (TS_DATA.length === 0) {{
+      noData.style.display = 'block';
+      if (chartWrap) chartWrap.style.display = 'none';
+      return;
+    }}
+    noData.style.display = 'none';
+    if (chartWrap) chartWrap.style.display = 'block';
+
+    var datasets = vars.map(function(v) {{
+      var pts = TS_DATA
+        .filter(function(r) {{ return r[v] !== null && r[v] !== undefined; }})
+        .map(function(r)   {{ return {{ x: r.date, y: r[v] }}; }});
+      return {{
+        label: v,
+        data: pts,
+        borderColor: COLORS[v] || '#4a9',
+        backgroundColor: (COLORS[v] || '#4a9') + '22',
+        borderWidth: 1.5,
+        pointRadius: 2.5,
+        pointHoverRadius: 4,
+        tension: 0.2,
+        fill: false,
+      }};
+    }});
+
+    var annotations = {{}};
+    if (REF_DATE) {{
+      annotations['ref'] = {{
+        type: 'line',
+        xMin: REF_DATE, xMax: REF_DATE,
+        borderColor: 'rgba(210,40,40,0.8)',
+        borderWidth: 1.5,
+        borderDash: [6, 4],
+        label: {{
+          display: true,
+          content: REF_LABEL,
+          position: 'start',
+          backgroundColor: 'rgba(210,40,40,0.1)',
+          color: '#c00',
+          font: {{ size: 9 }},
+          padding: 3,
+        }},
+      }};
+    }}
+
+    if (tsChart) tsChart.destroy();
+    var ctx = document.getElementById('ts-chart').getContext('2d');
+    tsChart = new Chart(ctx, {{
+      type: 'line',
+      data: {{ datasets: datasets }},
+      options: {{
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {{ mode: 'index', intersect: false }},
+        scales: {{
+          x: {{
+            type: 'time',
+            time: {{ unit: 'year', tooltipFormat: 'yyyy-MM-dd' }},
+            ticks: {{ maxTicksLimit: 6, font: {{ size: 9 }} }},
+            grid: {{ color: 'rgba(0,0,0,0.06)' }},
+          }},
+          y: {{
+            ticks: {{ maxTicksLimit: 5, font: {{ size: 9 }} }},
+            grid: {{ color: 'rgba(0,0,0,0.06)' }},
+          }},
+        }},
+        plugins: {{
+          legend: {{
+            display: vars.length > 1,
+            labels: {{ font: {{ size: 9 }}, boxWidth: 12 }},
+          }},
+          tooltip: {{
+            callbacks: {{
+              label: function(ctx) {{
+                var v = ctx.parsed.y;
+                return ctx.dataset.label + ': ' + (v !== null ? v.toFixed(3) : 'N/A');
+              }},
+            }},
+          }},
+          annotation: {{ annotations: annotations }},
+        }},
+      }},
+    }});
+  }}
+
+  (function pollMap() {{
+    var m = window['{_map_var}'];
+    if (!m) {{ setTimeout(pollMap, 50); return; }}
+
+    m.on('overlayadd', function(e) {{
+      showPanel(e.name);
+    }});
+    m.on('overlayremove', function(e) {{
+      var title = document.getElementById('ts-title');
+      if (title && title.textContent === e.name) {{
+        panel.style.display = 'none';
+      }}
+    }});
+
+    for (var i = 0; i < INIT_LAYERS.length; i++) {{
+      if (LAYER_VARS[INIT_LAYERS[i]]) {{
+        showPanel(INIT_LAYERS[i]);
+        break;
+      }}
+    }}
+  }})();
+}})();
+"""
+    fmap.get_root().script.add_child(folium.Element(_ts_script))
 
     folium.LayerControl(collapsed=False).add_to(fmap)
     out_map = SRC_DIR / f"map_{region_name}.html"

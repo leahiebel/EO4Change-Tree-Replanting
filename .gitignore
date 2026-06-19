@@ -2,4 +2,12 @@ lea_credentials.md
 TODOs.md
 docu/
 vision.md
+CLAUDE.md
+
+.venv/
+__pycache__/
+*.pyc
+
+.DS_Store
+
 
