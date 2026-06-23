@@ -1,8 +1,0 @@
-.venv-eo/
-.ipynb_checkpoints/
-__pycache__/
-
-data/raw/
-data/processed/
-outputs/
-.cache/
