@@ -17,7 +17,7 @@
             <meta name="viewport" content="width=device-width,
                 initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
             <style>
-                #map_a053a05a0e4fb24e6ddc76606542cd32 {
+                #map_0ec2524802ee8b62ab027974d821c1c4 {
                     position: relative;
                     width: 100.0%;
                     height: 100.0%;
@@ -53,16 +53,16 @@
 </head>
 <body>
     
-    <div style="position: fixed; bottom: 30px; right: 30px; z-index: 9999;  background: rgba(255,255,255,0.95); padding: 10px 12px;  border: 1px solid #888; border-radius: 4px;  font: 12px/1.3 system-ui, sans-serif; max-width: 240px;  box-shadow: 0 2px 6px rgba(0,0,0,0.2);"><div style="font-weight:600;margin-bottom:6px;">Establishment status</div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#888888;border:1px solid #555;margin-right:6px;"></span>  <span>0 — Uncertain</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#1f5e1f;border:1px solid #555;margin-right:6px;"></span>  <span>1 — Good establishment</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#a8d666;border:1px solid #555;margin-right:6px;"></span>  <span>2 — Moderate establishment</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#c47a1e;border:1px solid #555;margin-right:6px;"></span>  <span>3 — Weak / bare-soil risk</span></div><div style="font-size:10px;color:#666;margin-top:6px;">Greening signal only — not proof of tree survival.</div></div>
+    <div style="position: fixed; bottom: 30px; right: 30px; z-index: 9999;  background: rgba(255,255,255,0.95); padding: 10px 12px;  border: 1px solid #888; border-radius: 4px;  font: 12px/1.3 system-ui, sans-serif; max-width: 360px;  box-shadow: 0 2px 6px rgba(0,0,0,0.2);"><div style="font-weight:600;margin-bottom:6px;">Recovery class</div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#888888;border:1px solid #555;margin-right:6px;"></span>  <span>0 — Uncertain / water / insufficient data</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#1f5e1f;border:1px solid #555;margin-right:6px;"></span>  <span>1 — Recovering well</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#a8d666;border:1px solid #555;margin-right:6px;"></span>  <span>2 — Recovering, but weak</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#ff1a1a;border:1px solid #555;margin-right:6px;"></span>  <span>3 — Not recovering / failed</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#4b2e1f;border:1px solid #555;margin-right:6px;"></span>  <span>4 — Outside burn recovery assessment</span></div><div style="font-weight:600;margin:10px 0 6px 0;">Uncertainty flags</div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#2f7f3f;border:1px solid #555;margin-right:6px;"></span>  <span>0 — Clear recovery signal</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#888888;border:1px solid #555;margin-right:6px;"></span>  <span>1 — Water / insufficient observations</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#7d2222;border:1px solid #555;margin-right:6px;"></span>  <span>2 — Possible later disturbance</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#f4a261;border:1px solid #555;margin-right:6px;"></span>  <span>3 — Mixed recovery signal</span></div><div style="display:flex;align-items:center;margin:2px 0;">  <span style="display:inline-block;width:14px;height:14px;background:#4a7c59;border:1px solid #555;margin-right:6px;"></span>  <span>4 — Outside burn recovery assessment</span></div><div style="font-size:10px;color:#666;margin-top:6px;">Recovery class expresses a spectral trajectory consistent with woody vegetation establishment, not individual tree health.</div></div>
     
-            <div class="folium-map" id="map_a053a05a0e4fb24e6ddc76606542cd32" ></div>
+            <div class="folium-map" id="map_0ec2524802ee8b62ab027974d821c1c4" ></div>
         
 </body>
 <script>
     
     
-            var map_a053a05a0e4fb24e6ddc76606542cd32 = L.map(
-                "map_a053a05a0e4fb24e6ddc76606542cd32",
+            var map_0ec2524802ee8b62ab027974d821c1c4 = L.map(
+                "map_0ec2524802ee8b62ab027974d821c1c4",
                 {
                     center: [39.91008595146711, -8.25],
                     crs: L.CRS.EPSG3857,
@@ -74,13 +74,13 @@
 
                 }
             );
-            L.control.scale().addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            L.control.scale().addTo(map_0ec2524802ee8b62ab027974d821c1c4);
 
             
 
         
     
-            var tile_layer_52f7713160d46f18b35310afb905c506 = L.tileLayer(
+            var tile_layer_24c8de75bfd974e7424686bf788e39f1 = L.tileLayer(
                 "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                 {
   "minZoom": 0,
@@ -97,11 +97,11 @@
             );
         
     
-            tile_layer_52f7713160d46f18b35310afb905c506.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            tile_layer_24c8de75bfd974e7424686bf788e39f1.addTo(map_0ec2524802ee8b62ab027974d821c1c4);
         
     
-            var tile_layer_5adf95cb9ffd33b2855aa84d8a6b945c = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/f6c259f6e0753c43188af9057408e5a8-3e51bb7c66328bc0fa067bff41862813/tiles/{z}/{x}/{y}",
+            var tile_layer_e38a0a265861367913f765ddb570049e = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/13012e960911ade0562c8cfbdb05f30e-fbfac5ad24f07ce09ac329c0ce10dbb7/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -117,11 +117,11 @@
             );
         
     
-            tile_layer_5adf95cb9ffd33b2855aa84d8a6b945c.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            tile_layer_e38a0a265861367913f765ddb570049e.addTo(map_0ec2524802ee8b62ab027974d821c1c4);
         
     
-            var tile_layer_3812c28b8e9a2f059c8d71e97ef6f127 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/5ec8ccd67c40084fa5697f4a28f3feac-4281247eacd2ee46f3a842e429a4ce25/tiles/{z}/{x}/{y}",
+            var tile_layer_f0eb9cd8918b57bd05be9a77c92f581a = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/f0b314c46afe3c624f607a22d0c3a612-febe0a15d653290c81a54ff4a7b2a4e9/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -137,11 +137,11 @@
             );
         
     
-            tile_layer_3812c28b8e9a2f059c8d71e97ef6f127.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            tile_layer_f0eb9cd8918b57bd05be9a77c92f581a.addTo(map_0ec2524802ee8b62ab027974d821c1c4);
         
     
-            var tile_layer_b243ce4632ee5b37f4a2f0fead896e1c = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/79fdad8eb101489edaba2af4eb06afeb-042667bf3e0780a29c3409c657a0ec0b/tiles/{z}/{x}/{y}",
+            var tile_layer_2e452310880228974edd6c5c52068b8f = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/23b027d1a08700c2ffe0ee787c47e154-f4ab109279b70dac7d41f174a740532a/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -157,11 +157,11 @@
             );
         
     
-            tile_layer_b243ce4632ee5b37f4a2f0fead896e1c.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            tile_layer_2e452310880228974edd6c5c52068b8f.addTo(map_0ec2524802ee8b62ab027974d821c1c4);
         
     
-            var tile_layer_d173265bdc97eccff8172856de74e9ec = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/87cc4ed62c26dbe7ff1f38a182590fc0-60c0f2bace3afc62b8d88944b7a5fcc4/tiles/{z}/{x}/{y}",
+            var tile_layer_7646bbe5da613faefb155f362e2bdfc5 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/f95206cc969f6bf57fe1c88a3fb7b6d9-4caff2c942bcbc6d6ac2e3266afb7964/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -177,11 +177,11 @@
             );
         
     
-            tile_layer_d173265bdc97eccff8172856de74e9ec.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            tile_layer_7646bbe5da613faefb155f362e2bdfc5.addTo(map_0ec2524802ee8b62ab027974d821c1c4);
         
     
-            var tile_layer_a16e02c337a46209ff601c79aca03ac1 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/094310140dd9e4101e21ece11339ccf2-b8f680617aa51b841b822115412f4efd/tiles/{z}/{x}/{y}",
+            var tile_layer_f6a8030b83787727094d5a43da257ce5 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/4dcfc22ef1301e26ce33e6256f50477f-040429ebcd2bd3721c580c1d34680f81/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -197,11 +197,11 @@
             );
         
     
-            tile_layer_a16e02c337a46209ff601c79aca03ac1.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            tile_layer_f6a8030b83787727094d5a43da257ce5.addTo(map_0ec2524802ee8b62ab027974d821c1c4);
         
     
-            var tile_layer_2d7dcf835fa046b64af79518fd0faa66 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/2578a9719576f5505dfaac7b46c250e1-5d92fe651b497267c61c08fed0e4d3af/tiles/{z}/{x}/{y}",
+            var tile_layer_9abc28e78de4ccbf166b6a3a60875fbb = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/567ee14998e9eedf1aa3513e49042e01-e38491ee856b66a598d316a46e5a1b51/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -217,11 +217,8 @@
             );
         
     
-            tile_layer_2d7dcf835fa046b64af79518fd0faa66.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
-        
-    
-            var tile_layer_6c5d49aa3e3c3c30719bd43fb803bb43 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/f70b715759b4aecb16882b6cd472d141-f957a8cc8f3667a0a1100d73d5743bed/tiles/{z}/{x}/{y}",
+            var tile_layer_6568c3d772296773eb1af2ee42f75768 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/8054eaa0b6420c7a83511068b5246293-9cdbd8a5925a0050f02a8a2fa1dbbe0b/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -237,11 +234,11 @@
             );
         
     
-            tile_layer_6c5d49aa3e3c3c30719bd43fb803bb43.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            tile_layer_6568c3d772296773eb1af2ee42f75768.addTo(map_0ec2524802ee8b62ab027974d821c1c4);
         
     
-            var tile_layer_d296950d17887560a3bda8d94940695f = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/193f579340728ea2adc1b67ea9ef46d6-1b7572491be8dc289cc7b67109c81dd3/tiles/{z}/{x}/{y}",
+            var tile_layer_64ea4ed3564ac76c568c1814116ecc29 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/78470ccc767b185d8ceb49c36957450f-c161532275c05874cdd36f4e344dada4/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -257,11 +254,8 @@
             );
         
     
-            tile_layer_d296950d17887560a3bda8d94940695f.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
-        
-    
-            var tile_layer_708e1c518412fc35983787b13f4323e1 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/898dc5ff6ad6be35ba29cd76e28d16cf-c331b1c7f6555c9559cd7d14be8ae6fc/tiles/{z}/{x}/{y}",
+            var tile_layer_14c26c49ae988ef723874aff498adcae = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/8098cb3b3d815d640f6f0168a5567281-eeefacf410e861733cfc6c51c966a21e/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -277,8 +271,8 @@
             );
         
     
-            var tile_layer_8f76b08fd7d1ceb4c2308d66bc33447c = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/ed57dc4bccb2cba7cc81156d6be72a83-ed168d6ecb4321da5f9bb9019fd8ac9c/tiles/{z}/{x}/{y}",
+            var tile_layer_28af5465b593d57a3530808e61aea514 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/f19cc045cc27d556e652f91f64eefa12-f8aa64651c91e68da3720354291a0003/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -294,8 +288,8 @@
             );
         
     
-            var tile_layer_42b074d75c84107089a0c7401cf9fc18 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/c3bedae0ed9896235db0435bd6047ac6-fbf62837afebbd9e90878b3d5a1c5d9a/tiles/{z}/{x}/{y}",
+            var tile_layer_5c4dd0e3e1e48867294d17e6e7652cc2 = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/0becfb7dc7056d07324aec2b88c8f1e1-5b7cb68c83021624c9c59a23c5ac20d6/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -311,8 +305,8 @@
             );
         
     
-            var tile_layer_d2fdd8f3d31a210b5fd01dd7fc038958 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/45e7088f26438a9d6daf53edef4b88d0-6d99e5826ac74d5ede21531dbb77cf22/tiles/{z}/{x}/{y}",
+            var tile_layer_205ff703159788711458ee54678c3b6a = L.tileLayer(
+                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/0299a3480c2d35307576026d6cc339b1-d943e46c187502710f91361d8918486e/tiles/{z}/{x}/{y}",
                 {
   "minZoom": 0,
   "maxZoom": 18,
@@ -328,138 +322,66 @@
             );
         
     
-            var tile_layer_406b52bf95fb34ee321c9a91bd60ac1d = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/9b92c942c781059404aced7d1779639d-e0023a61f15ea6844743d4258a9c938a/tiles/{z}/{x}/{y}",
-                {
-  "minZoom": 0,
-  "maxZoom": 18,
-  "maxNativeZoom": 18,
-  "noWrap": false,
-  "attribution": "Google Earth Engine",
-  "subdomains": "abc",
-  "detectRetina": false,
-  "tms": false,
-  "opacity": 1,
-}
-
-            );
-        
-    
-            var tile_layer_1964a10ee8ee97eca409db83b8da86b6 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/93cc391c3e81ccb77df2cefc6f8259b5-6396cd138be2f0c8f67d575794d60958/tiles/{z}/{x}/{y}",
-                {
-  "minZoom": 0,
-  "maxZoom": 18,
-  "maxNativeZoom": 18,
-  "noWrap": false,
-  "attribution": "Google Earth Engine",
-  "subdomains": "abc",
-  "detectRetina": false,
-  "tms": false,
-  "opacity": 1,
-}
-
-            );
-        
-    
-            var tile_layer_9b46d9e7a0c04431440cda92c1727db5 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/8524c0953f8fee5265141324f78f8774-f049203fa83b0ae2b5fe0764448e0f9f/tiles/{z}/{x}/{y}",
-                {
-  "minZoom": 0,
-  "maxZoom": 18,
-  "maxNativeZoom": 18,
-  "noWrap": false,
-  "attribution": "Google Earth Engine",
-  "subdomains": "abc",
-  "detectRetina": false,
-  "tms": false,
-  "opacity": 1,
-}
-
-            );
-        
-    
-            var tile_layer_af8c5bf6cbd8c3e77d0b4c4f221fda24 = L.tileLayer(
-                "https://earthengine.googleapis.com/v1/projects/daring-pier-498809-k0/maps/52cc2dc58d42fe128e4a66f2f9d8c1ac-bbb2d9e6a9c5b0dd0b3cf3efc5a372fc/tiles/{z}/{x}/{y}",
-                {
-  "minZoom": 0,
-  "maxZoom": 18,
-  "maxNativeZoom": 18,
-  "noWrap": false,
-  "attribution": "Google Earth Engine",
-  "subdomains": "abc",
-  "detectRetina": false,
-  "tms": false,
-  "opacity": 1,
-}
-
-            );
-        
-    
-        function geo_json_2ae11f393a42da202d4dc41b6cf82b6c_styler(feature) {
+        function geo_json_823f1edc079c4c1f34660ac123552145_styler(feature) {
             switch(feature.id) {
                 default:
                     return {"color": "red", "fillOpacity": 0, "weight": 2};
             }
         }
 
-        function geo_json_2ae11f393a42da202d4dc41b6cf82b6c_onEachFeature(feature, layer) {
+        function geo_json_823f1edc079c4c1f34660ac123552145_onEachFeature(feature, layer) {
 
             layer.on({
             });
         };
-        var geo_json_2ae11f393a42da202d4dc41b6cf82b6c = L.geoJson(null, {
-                onEachFeature: geo_json_2ae11f393a42da202d4dc41b6cf82b6c_onEachFeature,
+        var geo_json_823f1edc079c4c1f34660ac123552145 = L.geoJson(null, {
+                onEachFeature: geo_json_823f1edc079c4c1f34660ac123552145_onEachFeature,
             
-                style: geo_json_2ae11f393a42da202d4dc41b6cf82b6c_styler,
+                style: geo_json_823f1edc079c4c1f34660ac123552145_styler,
             ...{
 }
         });
 
-        function geo_json_2ae11f393a42da202d4dc41b6cf82b6c_add (data) {
-            geo_json_2ae11f393a42da202d4dc41b6cf82b6c
+        function geo_json_823f1edc079c4c1f34660ac123552145_add (data) {
+            geo_json_823f1edc079c4c1f34660ac123552145
                 .addData(data);
         }
-            geo_json_2ae11f393a42da202d4dc41b6cf82b6c_add({"features": [{"geometry": {"coordinates": [[[-8.45, 39.8], [-8.05, 39.8], [-8.05, 40.02], [-8.45, 40.02], [-8.45, 39.8]]], "type": "Polygon"}, "id": "0", "type": "Feature"}], "type": "FeatureCollection"});
+            geo_json_823f1edc079c4c1f34660ac123552145_add({"features": [{"geometry": {"coordinates": [[[-8.45, 39.8], [-8.05, 39.8], [-8.05, 40.02], [-8.45, 40.02], [-8.45, 39.8]]], "type": "Polygon"}, "id": "0", "type": "Feature"}], "type": "FeatureCollection"});
 
         
     
-            geo_json_2ae11f393a42da202d4dc41b6cf82b6c.addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            geo_json_823f1edc079c4c1f34660ac123552145.addTo(map_0ec2524802ee8b62ab027974d821c1c4);
         
     
-            var layer_control_9d33fbc6cad88b1765a85a13223d665f_layers = {
+            var layer_control_97c29eb25f698e3725247577138fade6_layers = {
                 base_layers : {
-                    "openstreetmap" : tile_layer_52f7713160d46f18b35310afb905c506,
+                    "openstreetmap" : tile_layer_24c8de75bfd974e7424686bf788e39f1,
                 },
                 overlays :  {
-                    "RGB" : tile_layer_5adf95cb9ffd33b2855aa84d8a6b945c,
-                    "NDVI" : tile_layer_3812c28b8e9a2f059c8d71e97ef6f127,
-                    "LAI-e" : tile_layer_b243ce4632ee5b37f4a2f0fead896e1c,
-                    "FCOVER" : tile_layer_d173265bdc97eccff8172856de74e9ec,
-                    "BSI" : tile_layer_a16e02c337a46209ff601c79aca03ac1,
-                    "NDWI" : tile_layer_2d7dcf835fa046b64af79518fd0faa66,
-                    "NBR" : tile_layer_6c5d49aa3e3c3c30719bd43fb803bb43,
-                    "Establishment status" : tile_layer_d296950d17887560a3bda8d94940695f,
-                    "Early RGB (2017\u20132018)" : tile_layer_708e1c518412fc35983787b13f4323e1,
-                    "Recent RGB (2022\u20132025)" : tile_layer_8f76b08fd7d1ceb4c2308d66bc33447c,
-                    "NDVI_change" : tile_layer_42b074d75c84107089a0c7401cf9fc18,
-                    "NDRE_change" : tile_layer_d2fdd8f3d31a210b5fd01dd7fc038958,
-                    "NDMI_change" : tile_layer_406b52bf95fb34ee321c9a91bd60ac1d,
-                    "BSI_change" : tile_layer_1964a10ee8ee97eca409db83b8da86b6,
-                    "NDWI_change" : tile_layer_9b46d9e7a0c04431440cda92c1727db5,
-                    "NBR_change" : tile_layer_af8c5bf6cbd8c3e77d0b4c4f221fda24,
-                    "AOI" : geo_json_2ae11f393a42da202d4dc41b6cf82b6c,
+                    "RGB" : tile_layer_e38a0a265861367913f765ddb570049e,
+                    "NDVI" : tile_layer_f0eb9cd8918b57bd05be9a77c92f581a,
+                    "BSI" : tile_layer_2e452310880228974edd6c5c52068b8f,
+                    "NDWI" : tile_layer_7646bbe5da613faefb155f362e2bdfc5,
+                    "NBR" : tile_layer_f6a8030b83787727094d5a43da257ce5,
+                    "RRI (good\u22650.8, failed\u003c0.3)" : tile_layer_9abc28e78de4ccbf166b6a3a60875fbb,
+                    "Recovery class" : tile_layer_6568c3d772296773eb1af2ee42f75768,
+                    "Uncertainty flags" : tile_layer_64ea4ed3564ac76c568c1814116ecc29,
+                    "Forest mask (DW 2016, p\u22650.6)" : tile_layer_14c26c49ae988ef723874aff498adcae,
+                    "Pre-fire RGB (2017 Apr\u2013May)" : tile_layer_28af5465b593d57a3530808e61aea514,
+                    "Post-fire RGB (2017\u20132017)" : tile_layer_5c4dd0e3e1e48867294d17e6e7652cc2,
+                    "Recent RGB (2022\u20132025)" : tile_layer_205ff703159788711458ee54678c3b6a,
+                    "AOI" : geo_json_823f1edc079c4c1f34660ac123552145,
                 },
             };
-            let layer_control_9d33fbc6cad88b1765a85a13223d665f = L.control.layers(
-                layer_control_9d33fbc6cad88b1765a85a13223d665f_layers.base_layers,
-                layer_control_9d33fbc6cad88b1765a85a13223d665f_layers.overlays,
+            let layer_control_97c29eb25f698e3725247577138fade6 = L.control.layers(
+                layer_control_97c29eb25f698e3725247577138fade6_layers.base_layers,
+                layer_control_97c29eb25f698e3725247577138fade6_layers.overlays,
                 {
   "position": "topright",
   "collapsed": false,
   "autoZIndex": true,
 }
-            ).addTo(map_a053a05a0e4fb24e6ddc76606542cd32);
+            ).addTo(map_0ec2524802ee8b62ab027974d821c1c4);
 
         
 </script>

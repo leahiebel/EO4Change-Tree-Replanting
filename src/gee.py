@@ -47,8 +47,6 @@ import argparse
 import ee
 import yaml
 import json
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 from pathlib import Path
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -73,7 +71,7 @@ _cfg_arg = Path(_args.config)
 CONFIG_PATH = _cfg_arg if _cfg_arg.is_absolute() else DATA_DIR / _cfg_arg
 print(f"→ config: {CONFIG_PATH}")
 
-with open(CONFIG_PATH) as f:
+with open(CONFIG_PATH, encoding="utf-8") as f:
     cfg = yaml.safe_load(f)
 
 sp  = cfg["spatial"]
@@ -90,18 +88,38 @@ BIOPHYS_VARS: list[str] = (
 # Comparison periods for early-vs-recent change maps (vision M1+M2).
 # Defaults match vision.md spec; configs may override.
 cmp_cfg = cfg.get("comparison", {}) or {}
-EARLY_YEARS  = tuple(cmp_cfg.get("early_years",  [2017, 2018]))
-RECENT_YEARS = tuple(cmp_cfg.get("recent_years", [2022, 2025]))
-CMP_MONTHS   = tuple(cmp_cfg.get("months",       [5, 9]))
+PREFIRE_YEARS  = tuple(cmp_cfg.get("prefire_years",  [2017, 2017]))
+PREFIRE_MONTHS = tuple(cmp_cfg.get("prefire_months", [4, 6]))   # Apr–May: before June 17 fire
+POSTFIRE_YEARS = tuple(cmp_cfg.get("postfire_years",
+                        cmp_cfg.get("early_years",   [2017, 2017])))  # backward compat
+RECENT_YEARS   = tuple(cmp_cfg.get("recent_years",  [2022, 2025]))
+CMP_MONTHS     = tuple(cmp_cfg.get("months",        [5, 9]))
 
-# Establishment status classification thresholds (vision M3). Per vision.md
-# these are intentionally empirical and meant to be tuned after inspecting
-# the first classified map.
+# Forest mask — Dynamic World pre-fire tree probability.
+# Pixels outside this mask are excluded from recovery classification so that
+# cropland, urban areas, and water bodies do not pollute the statistics.
+fm_cfg  = cfg.get("forest_mask", {}) or {}
+FM_ENABLED   = bool(fm_cfg.get("enabled", False))
+FM_YEAR      = int(fm_cfg.get("year", 2016))
+FM_MONTHS    = tuple(fm_cfg.get("months", [5, 9]))
+FM_THRESHOLD = float(fm_cfg.get("tree_prob_threshold", 0.40))
+
+# Recovery class and guard-flag thresholds.
+# The composite index is the rule-based recovery_class map; each threshold
+# has a direct ecological interpretation and is validated by OAT sensitivity
+# analysis in calibrate_thresholds.py.
 cls_cfg = cfg.get("classification", {}) or {}
-T_CHANGE      = float(cls_cfg.get("change_magnitude",     0.05))
-T_NDVI_LOW    = float(cls_cfg.get("ndvi_low_threshold",   0.30))
-T_BSI_HIGH    = float(cls_cfg.get("bsi_high_threshold",   0.20))
-T_WATER       = float(cls_cfg.get("ndwi_water_threshold", 0.20))
+# RRI thresholds (primary recovery metric)
+T_RRI_GOOD      = float(cls_cfg.get("rri_good_threshold",        0.80))
+T_RRI_LOW       = float(cls_cfg.get("rri_low_threshold",         0.30))
+T_RRI_MIN_DENOM = float(cls_cfg.get("rri_min_denominator",       0.10))
+T_BURN          = float(cls_cfg.get("burn_severity_threshold",   0.10))
+# Secondary canopy-quality check (Class 1) and guard-flag thresholds
+T_NDRE_GOOD  = float(cls_cfg.get("ndre_good_threshold",          0.18))
+T_DNDVI_GOOD = float(cls_cfg.get("ndvi_change_good_threshold",   0.09))
+T_BSI_HIGH   = float(cls_cfg.get("bsi_high_threshold",           0.09))
+T_WATER      = float(cls_cfg.get("ndwi_water_threshold",         0.15))
+T_DISTURB    = float(cls_cfg.get("disturbance_threshold",        0.09))
 
 # Reference event date for the vertical line on time-series plots.
 # Set reference_date: null in the config to hide the line entirely.
@@ -240,19 +258,27 @@ def add_requested_biophys(img: ee.Image) -> ee.Image:
 # ── Composite builder ─────────────────────────────────────────────────────────
 ALL_BANDS = SPECTRAL_BANDS + BIOPHYS_VARS
 
-# Fully-masked placeholder returned for empty windows (no cloud-free images).
-# reduceRegion on a masked image returns None for every band, which we catch below.
-_PLACEHOLDER = (ee.Image.constant([0] * len(ALL_BANDS))
-                  .rename(ALL_BANDS)
+# Only keep the bands we actually need in final composites.
+# This avoids Earth Engine errors caused by inconsistent Sentinel-2 QA/mask bands.
+RGB_BANDS = ["B4", "B3", "B2"]
+COMPOSITE_BANDS = RGB_BANDS + ALL_BANDS
+
+_PLACEHOLDER = (ee.Image.constant([0] * len(COMPOSITE_BANDS))
+                  .rename(COMPOSITE_BANDS)
                   .updateMask(ee.Image(0)))
 
 def make_composite(ws: str, we: str) -> ee.Image:
     col = (build_s2_col(ws, we)
              .map(add_spectral_indices)
-             .map(add_requested_biophys))
-    # Server-side conditional: if collection is empty return masked placeholder
+             .map(add_requested_biophys)
+             .map(lambda img: img.select(COMPOSITE_BANDS)))
+
     return ee.Image(
-        ee.Algorithms.If(col.size().gt(0), col.median().clip(aoi), _PLACEHOLDER)
+        ee.Algorithms.If(
+            col.size().gt(0),
+            col.median().select(COMPOSITE_BANDS).clip(aoi),
+            _PLACEHOLDER
+        )
     )
 
 # Multi-year seasonal composite (vision.md Milestone 1).
@@ -265,54 +291,159 @@ def make_seasonal_composite(year_start: int, year_end: int,
     cols = []
     for y in range(year_start, year_end + 1):
         ws = f"{y}-{month_start:02d}-01"
-        we = f"{y}-{month_end:02d}-01"   # exclusive end (filterDate convention)
+        we = f"{y}-{month_end:02d}-01"
+
         cols.append(build_s2_col(ws, we)
                       .map(add_spectral_indices)
-                      .map(add_requested_biophys))
+                      .map(add_requested_biophys)
+                      .map(lambda img: img.select(COMPOSITE_BANDS)))
+
     merged = cols[0]
     for c in cols[1:]:
         merged = merged.merge(c)
-    return merged.median().clip(aoi)
 
-# Establishment status map (vision.md Milestone 3).
-# Per-pixel categorical classification from the rule logic in vision.md
-# section "Explicit rule logic and interpretation layer".
-#
-# Class values (priority high→low: Uncertain > Weak > Good > Moderate):
-#   0 = Uncertain  (any input band masked over the pixel)
-#   1 = Good       (NDVI ↗ AND BSI ↘ AND NDMI stable↗ AND not standing water)
-#   2 = Moderate   (default: valid pixel that is neither Good nor Weak)
-#   3 = Weak       (NDVI stayed low OR BSI stayed high)
-def build_establishment_status(early: ee.Image, recent: ee.Image,
-                               change: ee.Image) -> ee.Image:
-    ndvi_increased = change.select("NDVI_change").gt( T_CHANGE)
-    bsi_decreased  = change.select("BSI_change" ).lt(-T_CHANGE)
-    ndmi_stable_up = change.select("NDMI_change").gt(-T_CHANGE)
-    not_water      = recent.select("NDWI"       ).lt( T_WATER)
-    good = ndvi_increased.And(bsi_decreased).And(ndmi_stable_up).And(not_water)
+    return merged.median().select(COMPOSITE_BANDS).clip(aoi)
 
-    ndvi_low      = recent.select("NDVI").lt(T_NDVI_LOW)
-    bsi_high      = recent.select("BSI" ).gt(T_BSI_HIGH)
-    weak = ndvi_low.Or(bsi_high)
+def build_forest_mask() -> ee.Image | None:
+    """Return a binary mask (1 = was forest pre-fire) from Dynamic World tree
+    probability, or None when forest masking is disabled in the config.
+    Uses a summer median of the DW 'trees' band for FM_YEAR.
+    """
+    if not FM_ENABLED:
+        return None
+    ws = f"{FM_YEAR}-{FM_MONTHS[0]:02d}-01"
+    we = f"{FM_YEAR}-{FM_MONTHS[1]:02d}-01"
+    dw = (ee.ImageCollection("GOOGLE/DYNAMICWORLD/V1")
+          .filterBounds(aoi)
+          .filterDate(ws, we)
+          .select("trees")
+          .median()
+          .clip(aoi))
+    return dw.gte(FM_THRESHOLD).rename("forest_mask")
 
-    # Start with Moderate (2); promote Good (1); override with Weak (3) per
-    # priority; finally mark Uncertain (0) wherever any input is masked.
-    cls = ee.Image.constant(2).rename("establishment_status")
+
+def _recovery_valid_mask(recent: ee.Image, change: ee.Image) -> ee.Image:
+    return (recent.select("NDVI").mask()
+            .multiply(recent.select("NDRE").mask())
+            .multiply(recent.select("BSI").mask())
+            .multiply(recent.select("NDWI").mask())
+            .multiply(change.select("NDVI_change").mask())
+            .multiply(change.select("NBR_change").mask()))
+
+
+def compute_rri(recent: ee.Image, postfire: ee.Image,
+                prefire: ee.Image) -> ee.Image:
+    """Relative Recovery Indicator (NDVI-based):
+        RRI = (recent_NDVI − postfire_NDVI) / (prefire_NDVI − postfire_NDVI)
+    RRI ≈ 1.0 → fully back to pre-fire level.
+    RRI ≈ 0   → still at post-fire (damage) level.
+    RRI < 0   → worse than post-fire (new disturbance or severe stress).
+    Masked where (prefire − postfire) < T_RRI_MIN_DENOM (fire signal too
+    small to compute a meaningful ratio).
+    """
+    ndvi_recent   = recent.select("NDVI")
+    ndvi_postfire = postfire.select("NDVI")
+    ndvi_prefire  = prefire.select("NDVI")
+    denom = ndvi_prefire.subtract(ndvi_postfire)
+    rri = (ndvi_recent.subtract(ndvi_postfire)
+                      .divide(denom.max(ee.Image.constant(T_RRI_MIN_DENOM)))
+                      .clamp(-1, 2)
+                      .rename("RRI")
+                      .updateMask(denom.gte(T_RRI_MIN_DENOM)))
+    return rri.clip(aoi)
+
+
+# Recovery class values:
+#   0 = Uncertain / water / insufficient observations
+#   1 = Recovering well   (burned + RRI ≥ T_RRI_GOOD + NDRE ≥ T_NDRE_GOOD)
+#   2 = Recovering, but weak  (burned + T_RRI_LOW ≤ RRI < T_RRI_GOOD)
+#   3 = Not recovering / failed  (burned + RRI < T_RRI_LOW)
+#   4 = Stable / unburned forest  (dNBR < T_BURN; forest not significantly fire-affected)
+def build_recovery_class(recent: ee.Image, postfire: ee.Image,
+                         prefire: ee.Image, change: ee.Image) -> ee.Image:
+    rri = compute_rri(recent, postfire, prefire)
+
+    # Fire-affected pixels: dNBR ≥ T_BURN (USGS low-severity floor).
+    # Pixels below this were not meaningfully burned → class 4.
+    dnbr  = prefire.select("NBR").subtract(postfire.select("NBR"))
+    burned = dnbr.gte(T_BURN)
+
+    ndre_good = recent.select("NDRE").gte(T_NDRE_GOOD)
+    water     = recent.select("NDWI").gt(T_WATER)
+    valid     = _recovery_valid_mask(recent, change)
+
+    good   = rri.gte(T_RRI_GOOD).And(ndre_good).And(water.Not()).And(burned)
+    failed = rri.lt(T_RRI_LOW).And(water.Not()).And(burned)
+
+    cls = ee.Image.constant(2).rename("recovery_class")  # default: burned but undecided
     cls = cls.where(good, 1)
-    cls = cls.where(weak, 3)
+    cls = cls.where(failed, 3)
+    # Class 4: valid data but pixel not significantly fire-affected
+    cls = cls.where(valid.eq(1).And(water.Not()).And(burned.Not()), 4)
+    # Class 0: water or insufficient observations (overrides all)
+    cls = cls.where(valid.eq(0).Or(water), 0)
+    return cls.clip(aoi).toUint8().rename("recovery_class")
 
-    # Compose validity mask from all input bands used by the rules. .mask()
-    # returns 1 where data is present, 0 where masked.
-    valid = (recent.select("NDVI").mask()
-             .multiply(recent.select("BSI" ).mask())
-             .multiply(recent.select("NDWI").mask())
-             .multiply(change.select("NDVI_change").mask())
-             .multiply(change.select("BSI_change" ).mask())
-             .multiply(change.select("NDMI_change").mask()))
-    cls = cls.where(valid.eq(0), 0)
 
-    # Re-mask outside the AOI so the categorical raster respects the polygon.
-    return cls.clip(aoi).toUint8().rename("establishment_status")
+# Guard flags make the limitations explicit instead of burying them inside the
+# class. Class values:
+#   0 = Clear
+#   1 = Possible water / non-vegetation pixel
+#   2 = Possible disturbance
+#   3 = Mixed signal (green-up without strong canopy/soil-closure evidence)
+#   4 = Insufficient observations
+def build_guard_flags(recent: ee.Image, postfire: ee.Image,
+                      prefire: ee.Image, change: ee.Image) -> ee.Image:
+    """
+    Uncertainty flags for the burned-area recovery assessment.
+
+    0 = Clear
+    1 = Water / invalid observations
+    2 = Possible later disturbance inside burned area
+    3 = Mixed recovery signal inside burned area
+    4 = Outside burn recovery assessment
+    """
+
+    # Same burn mask as recovery_class
+    dnbr = prefire.select("NBR").subtract(postfire.select("NBR"))
+    burned = dnbr.gte(T_BURN)
+
+    water = recent.select("NDWI").gt(T_WATER)
+    valid = _recovery_valid_mask(recent, change)
+
+    # Only meaningful inside the burned assessment area
+    disturbance = (
+        change.select("NBR_change")
+        .lt(-T_DISTURB)
+        .And(burned)
+        .And(water.Not())
+        .And(valid.eq(1))
+    )
+
+    mixed_signal = (
+        change.select("NDVI_change").gte(T_DNDVI_GOOD)
+        .And(
+            recent.select("NDRE").lt(T_NDRE_GOOD)
+            .Or(recent.select("BSI").gt(T_BSI_HIGH))
+        )
+        .And(burned)
+        .And(water.Not())
+        .And(valid.eq(1))
+    )
+
+    out = ee.Image.constant(0).rename("guard_flags")
+
+    # 4 = outside burned recovery assessment
+    out = out.where(valid.eq(1).And(water.Not()).And(burned.Not()), 4)
+
+    # 2 and 3 only inside burned area
+    out = out.where(disturbance, 2)
+    out = out.where(mixed_signal.And(disturbance.Not()), 3)
+
+    # 1 overrides everything: invalid / water
+    out = out.where(valid.eq(0).Or(water), 1)
+
+    return out.clip(aoi).toUint8().rename("guard_flags")
 
 # ── Time-series extraction ────────────────────────────────────────────────────
 def extract_mean(ws: str, we: str) -> dict:
@@ -368,6 +499,9 @@ def _plot_band(ax, band, color, ylabel, records, dates):
     ax.legend(fontsize=8)
 
 if not MAP_ONLY:
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+
     dates = [datetime.strptime(r["date"], "%Y-%m-%d") for r in records]
     cadence_str = f"{tmp['cadence']['type']} / {tmp['cadence'].get('interval','seasons')}"
 
@@ -404,21 +538,27 @@ if not MAP_ONLY:
 RASTER_START, RASTER_END = "2023-06-01", "2023-08-31"
 raster = make_composite(RASTER_START, RASTER_END)
 bounds = aoi.bounds().getInfo()["coordinates"][0]
-# ── Early vs Recent seasonal composites (vision M1) ──────────────────────
-print(f"Building early composite (months {CMP_MONTHS[0]}-{CMP_MONTHS[1]-1}, "
-      f"years {EARLY_YEARS[0]}-{EARLY_YEARS[1]})…")
-early_composite  = make_seasonal_composite(EARLY_YEARS[0],  EARLY_YEARS[1],
-                                           CMP_MONTHS[0],    CMP_MONTHS[1])
+# ── Pre-fire, post-fire, and recent seasonal composites ──────────────────────
+print(f"Building pre-fire composite (months {PREFIRE_MONTHS[0]}-{PREFIRE_MONTHS[1]-1}, "
+      f"year {PREFIRE_YEARS[0]})\u2026")
+prefire_composite  = make_seasonal_composite(PREFIRE_YEARS[0],  PREFIRE_YEARS[1],
+                                             PREFIRE_MONTHS[0],  PREFIRE_MONTHS[1])
+print(f"Building post-fire composite (months {CMP_MONTHS[0]}-{CMP_MONTHS[1]-1}, "
+      f"years {POSTFIRE_YEARS[0]}-{POSTFIRE_YEARS[1]})…")
+postfire_composite = make_seasonal_composite(POSTFIRE_YEARS[0], POSTFIRE_YEARS[1],
+                                             CMP_MONTHS[0],      CMP_MONTHS[1])
 print(f"Building recent composite (months {CMP_MONTHS[0]}-{CMP_MONTHS[1]-1}, "
       f"years {RECENT_YEARS[0]}-{RECENT_YEARS[1]})…")
 recent_composite = make_seasonal_composite(RECENT_YEARS[0], RECENT_YEARS[1],
                                            CMP_MONTHS[0],    CMP_MONTHS[1])
 
-# ── Change image (vision M2) ─────────────────────────────────────
-print("Computing change image (recent − early)…")
+# ── Change image: recent vs. post-fire damage baseline (vision M2) ────────────
+# Using 2017 (fire year only) as damage baseline excludes 2018 replanting
+# contamination. The pre-fire composite is available separately for context.
+print("Computing change image (recent − post-fire)…")
 CHANGE_BANDS = [f"{b}_change" for b in SPECTRAL_BANDS]
 change_img = (recent_composite.select(SPECTRAL_BANDS)
-                              .subtract(early_composite.select(SPECTRAL_BANDS))
+                              .subtract(postfire_composite.select(SPECTRAL_BANDS))
                               .rename(CHANGE_BANDS))
 
 # Diagnostic: print min/max per change band. bestEffort avoids the
@@ -452,51 +592,701 @@ VIS_CHANGE = {
     "NBR_change":  {"min":-0.3, "max":0.3, "palette": _DIVERGE_RG},
 }
 
-# ── Establishment status map (vision M3) ────────────────────────────────
-print("Building establishment status map (M3)…")
-establishment_status = build_establishment_status(
-    early_composite, recent_composite, change_img,
+# ── Forest mask (Dynamic World pre-fire tree probability) ───────────────
+if FM_ENABLED:
+    print(f"Building forest mask (Dynamic World {FM_YEAR}, tree prob >= {FM_THRESHOLD})…")
+forest_mask_img = build_forest_mask()
+
+# ── Simplified recovery products ─────────────────────────────────────────
+print("Computing RRI…")
+rri_img = compute_rri(recent_composite, postfire_composite, prefire_composite)
+
+print("Building recovery class…")
+recovery_class = build_recovery_class(recent_composite, postfire_composite,
+                                      prefire_composite, change_img)
+
+print("Building guard flags…")
+guard_flags = build_guard_flags(
+    recent_composite,
+    postfire_composite,
+    prefire_composite,
+    change_img
+)
+# Apply pre-fire forest mask: pixels outside the mask are excluded.
+if forest_mask_img is not None:
+    recovery_class = recovery_class.updateMask(forest_mask_img)
+    guard_flags    = guard_flags.updateMask(forest_mask_img)
+
+# ── Sensitivity analysis for key thresholds ──────────────────────────────────
+# One-at-a-time sensitivity analysis:
+#   1. vary burn_severity_threshold while keeping RRI thresholds fixed
+#   2. vary rri_good_threshold while keeping burn + low RRI fixed
+#   3. vary rri_low_threshold while keeping burn + good RRI fixed
+#
+# Output:
+#   - CSV table with class counts and percentages
+#   - one plot per tested threshold
+
+sens_cfg = cfg.get("sensitivity_analysis", {}) or {}
+SENS_ENABLED = bool(sens_cfg.get("enabled", False))
+
+SENS_BURN_VALUES = sens_cfg.get(
+    "burn_severity_threshold_values",
+    [0.05, 0.075, T_BURN, 0.125, 0.15],
 )
 
-# Class metadata — keep these in sync with build_establishment_status() values.
-ESTAB_CLASSES = [
-    (0, "Uncertain",              "#888888"),   # grey  — masked / no data
-    (1, "Good establishment",     "#1f5e1f"),   # dark green
-    (2, "Moderate establishment", "#a8d666"),   # light green
-    (3, "Weak / bare-soil risk",  "#c47a1e"),   # orange
+SENS_RRI_GOOD_VALUES = sens_cfg.get(
+    "rri_good_threshold_values",
+    [0.70, 0.75, T_RRI_GOOD, 0.85, 0.90],
+)
+
+SENS_RRI_LOW_VALUES = sens_cfg.get(
+    "rri_low_threshold_values",
+    [0.20, 0.25, T_RRI_LOW, 0.35, 0.40],
+)
+
+
+def build_recovery_class_sensitivity(
+    recent: ee.Image,
+    postfire: ee.Image,
+    prefire: ee.Image,
+    change: ee.Image,
+    t_burn: float,
+    t_rri_good: float,
+    t_rri_low: float,
+) -> ee.Image:
+    """
+    Same logic as build_recovery_class(), but with threshold values passed
+    explicitly. This avoids changing the global config thresholds.
+    """
+    rri = compute_rri(recent, postfire, prefire)
+
+    dnbr = prefire.select("NBR").subtract(postfire.select("NBR"))
+    burned = dnbr.gte(t_burn)
+
+    ndre_good = recent.select("NDRE").gte(T_NDRE_GOOD)
+    water = recent.select("NDWI").gt(T_WATER)
+    valid = _recovery_valid_mask(recent, change)
+
+    good = (
+        rri.gte(t_rri_good)
+        .And(ndre_good)
+        .And(water.Not())
+        .And(burned)
+    )
+
+    failed = (
+        rri.lt(t_rri_low)
+        .And(water.Not())
+        .And(burned)
+    )
+
+    cls = ee.Image.constant(2).rename("recovery_class")
+
+    # 1 = recovering well
+    cls = cls.where(good, 1)
+
+    # 3 = not recovering / failed
+    cls = cls.where(failed, 3)
+
+    # 4 = outside burn recovery assessment
+    cls = cls.where(
+        valid.eq(1)
+        .And(water.Not())
+        .And(burned.Not()),
+        4,
+    )
+
+    # 0 = water / invalid / insufficient observations
+    cls = cls.where(valid.eq(0).Or(water), 0)
+
+    return cls.clip(aoi).toUint8().rename("recovery_class")
+
+
+def summarize_recovery_class(
+    cls: ee.Image,
+    parameter_name: str,
+    parameter_value: float,
+    t_burn: float,
+    t_rri_good: float,
+    t_rri_low: float,
+) -> dict:
+    """
+    Count pixels in each recovery class and compute percentages.
+
+    We report percentages in two ways:
+      - over all valid pixels inside the forest mask
+      - over the burned assessment area only: classes 1 + 2 + 3
+    """
+    if forest_mask_img is not None:
+        cls = cls.updateMask(forest_mask_img)
+
+    hist = cls.reduceRegion(
+        reducer=ee.Reducer.frequencyHistogram(),
+        geometry=aoi,
+        scale=int(exp.get("scale", 20)),
+        maxPixels=int(exp.get("max_pixels", 1e9)),
+        bestEffort=True,
+    ).getInfo()
+
+    counts_raw = hist.get("recovery_class") or {}
+    counts = {int(float(k)): int(v) for k, v in counts_raw.items()}
+
+    c0 = counts.get(0, 0)
+    c1 = counts.get(1, 0)
+    c2 = counts.get(2, 0)
+    c3 = counts.get(3, 0)
+    c4 = counts.get(4, 0)
+
+    total_px = c0 + c1 + c2 + c3 + c4
+    burned_px = c1 + c2 + c3
+
+    if total_px == 0:
+        total_px = 1
+
+    if burned_px == 0:
+        burned_px = 1
+
+    row = {
+        "parameter": parameter_name,
+        "value": parameter_value,
+
+        "burn_severity_threshold": t_burn,
+        "rri_good_threshold": t_rri_good,
+        "rri_low_threshold": t_rri_low,
+
+        "class0_uncertain_px": c0,
+        "class1_recovering_well_px": c1,
+        "class2_recovering_weak_px": c2,
+        "class3_failed_px": c3,
+        "class4_outside_assessment_px": c4,
+
+        "total_forest_mask_px": total_px,
+        "burned_assessment_px": burned_px,
+
+        "class0_uncertain_pct_total": 100.0 * c0 / total_px,
+        "class1_recovering_well_pct_total": 100.0 * c1 / total_px,
+        "class2_recovering_weak_pct_total": 100.0 * c2 / total_px,
+        "class3_failed_pct_total": 100.0 * c3 / total_px,
+        "class4_outside_assessment_pct_total": 100.0 * c4 / total_px,
+
+        "recovering_well_pct_burned": 100.0 * c1 / burned_px,
+        "recovering_weak_pct_burned": 100.0 * c2 / burned_px,
+        "failed_pct_burned": 100.0 * c3 / burned_px,
+    }
+
+    return row
+
+
+def run_threshold_sensitivity_analysis() -> None:
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    rows = []
+
+    print("Running threshold sensitivity analysis...")
+
+    # Baseline row
+    baseline_cls = build_recovery_class_sensitivity(
+        recent=recent_composite,
+        postfire=postfire_composite,
+        prefire=prefire_composite,
+        change=change_img,
+        t_burn=T_BURN,
+        t_rri_good=T_RRI_GOOD,
+        t_rri_low=T_RRI_LOW,
+    )
+
+    rows.append(
+        summarize_recovery_class(
+            cls=baseline_cls,
+            parameter_name="baseline",
+            parameter_value=0.0,
+            t_burn=T_BURN,
+            t_rri_good=T_RRI_GOOD,
+            t_rri_low=T_RRI_LOW,
+        )
+    )
+
+    # 1. Sensitivity to burn severity threshold
+    for value in SENS_BURN_VALUES:
+        value = float(value)
+
+        print(f"  testing burn_severity_threshold = {value}")
+
+        cls = build_recovery_class_sensitivity(
+            recent=recent_composite,
+            postfire=postfire_composite,
+            prefire=prefire_composite,
+            change=change_img,
+            t_burn=value,
+            t_rri_good=T_RRI_GOOD,
+            t_rri_low=T_RRI_LOW,
+        )
+
+        rows.append(
+            summarize_recovery_class(
+                cls=cls,
+                parameter_name="burn_severity_threshold",
+                parameter_value=value,
+                t_burn=value,
+                t_rri_good=T_RRI_GOOD,
+                t_rri_low=T_RRI_LOW,
+            )
+        )
+
+    # 2. Sensitivity to RRI good threshold
+    for value in SENS_RRI_GOOD_VALUES:
+        value = float(value)
+
+        print(f"  testing rri_good_threshold = {value}")
+
+        cls = build_recovery_class_sensitivity(
+            recent=recent_composite,
+            postfire=postfire_composite,
+            prefire=prefire_composite,
+            change=change_img,
+            t_burn=T_BURN,
+            t_rri_good=value,
+            t_rri_low=T_RRI_LOW,
+        )
+
+        rows.append(
+            summarize_recovery_class(
+                cls=cls,
+                parameter_name="rri_good_threshold",
+                parameter_value=value,
+                t_burn=T_BURN,
+                t_rri_good=value,
+                t_rri_low=T_RRI_LOW,
+            )
+        )
+
+    # 3. Sensitivity to RRI low / failed threshold
+    for value in SENS_RRI_LOW_VALUES:
+        value = float(value)
+
+        print(f"  testing rri_low_threshold = {value}")
+
+        cls = build_recovery_class_sensitivity(
+            recent=recent_composite,
+            postfire=postfire_composite,
+            prefire=prefire_composite,
+            change=change_img,
+            t_burn=T_BURN,
+            t_rri_good=T_RRI_GOOD,
+            t_rri_low=value,
+        )
+
+        rows.append(
+            summarize_recovery_class(
+                cls=cls,
+                parameter_name="rri_low_threshold",
+                parameter_value=value,
+                t_burn=T_BURN,
+                t_rri_good=T_RRI_GOOD,
+                t_rri_low=value,
+            )
+        )
+
+    df = pd.DataFrame(rows)
+
+    # Add deltas relative to the baseline result.
+    baseline = df[df["parameter"] == "baseline"].iloc[0]
+
+    for col in [
+        "recovering_well_pct_burned",
+        "recovering_weak_pct_burned",
+        "failed_pct_burned",
+        "class4_outside_assessment_pct_total",
+        "burned_assessment_px",
+    ]:
+        df[f"delta_{col}"] = df[col] - baseline[col]
+
+    out_csv = SRC_DIR / f"sensitivity_thresholds_{region_name}.csv"
+    df.to_csv(out_csv, index=False)
+
+    print(f"Sensitivity CSV → {out_csv}")
+
+    # Plot one figure per parameter.
+    for parameter_name in [
+        "burn_severity_threshold",
+        "rri_good_threshold",
+        "rri_low_threshold",
+    ]:
+        sub = df[df["parameter"] == parameter_name].copy()
+
+        if sub.empty:
+            continue
+
+        sub = sub.sort_values("value")
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+        ax.plot(
+            sub["value"],
+            sub["recovering_well_pct_burned"],
+            marker="o",
+            label="Recovering well (% of burned assessment)",
+        )
+
+        ax.plot(
+            sub["value"],
+            sub["recovering_weak_pct_burned"],
+            marker="o",
+            label="Recovering weak (% of burned assessment)",
+        )
+
+        ax.plot(
+            sub["value"],
+            sub["failed_pct_burned"],
+            marker="o",
+            label="Failed (% of burned assessment)",
+        )
+
+        # Class 4 is especially relevant for burn threshold sensitivity.
+        if parameter_name == "burn_severity_threshold":
+            ax.plot(
+                sub["value"],
+                sub["class4_outside_assessment_pct_total"],
+                marker="o",
+                linestyle="--",
+                label="Outside assessment (% of total forest mask)",
+            )
+
+        ax.axvline(
+            {
+                "burn_severity_threshold": T_BURN,
+                "rri_good_threshold": T_RRI_GOOD,
+                "rri_low_threshold": T_RRI_LOW,
+            }[parameter_name],
+            linestyle=":",
+            linewidth=1.5,
+            label="Baseline value",
+        )
+
+        ax.set_xlabel(parameter_name)
+        ax.set_ylabel("Pixel percentage")
+        ax.set_title(f"Sensitivity analysis: {parameter_name}")
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=8)
+
+        plt.tight_layout()
+
+        out_png = SRC_DIR / f"sensitivity_{parameter_name}_{region_name}.png"
+        fig.savefig(out_png, dpi=150)
+        plt.close(fig)
+
+        print(f"Sensitivity plot → {out_png}")
+
+    # Print a compact terminal summary.
+    print("\nSensitivity summary:")
+    cols_to_print = [
+        "parameter",
+        "value",
+        "recovering_well_pct_burned",
+        "recovering_weak_pct_burned",
+        "failed_pct_burned",
+        "class4_outside_assessment_pct_total",
+    ]
+    print(df[cols_to_print].to_string(index=False))
+
+
+if SENS_ENABLED:
+    run_threshold_sensitivity_analysis()
+else:
+    print("Sensitivity analysis disabled.")
+
+# ── Failed-pixel diagnostics ─────────────────────────────────────────────────
+# We pre-compute monthly time series for a few pixels classified as:
+#   3 = Not recovering / failed
+#
+# The output is:
+#   1. A CSV file with the extracted time series
+#   2. Clickable markers on the Folium map with a small HTML table
+
+diag_cfg = cfg.get("failed_diagnostics", {}) or {}
+FAILED_DIAG_ENABLED = bool(diag_cfg.get("enabled", True))
+FAILED_DIAG_N = int(diag_cfg.get("n_examples", 5))
+FAILED_DIAG_RADIUS_M = int(diag_cfg.get("radius_m", 40))
+
+failed_examples = []
+failed_diag_rows = []
+
+
+def _fmt(v, digits=3):
+    """Format numbers nicely for HTML tables."""
+    if v is None:
+        return ""
+    try:
+        return f"{float(v):.{digits}f}"
+    except Exception:
+        return str(v)
+
+
+def sample_failed_locations() -> list[dict]:
+    """
+    Select diagnostic locations from the largest connected clusters of
+    recovery class 3 = Not recovering / failed.
+
+    This is better than random sampling because it guarantees that the main
+    visible red patches are represented.
+    """
+    scale = int(exp.get("scale", 20))
+
+    failed_mask = recovery_class.eq(3).selfMask().rename("failed")
+
+    failed_vectors = failed_mask.reduceToVectors(
+        geometry=aoi,
+        scale=scale,
+        geometryType="polygon",
+        eightConnected=True,
+        labelProperty="failed",
+        reducer=ee.Reducer.countEvery(),
+        maxPixels=int(exp.get("max_pixels", 1e9)),
+        tileScale=4,
+    )
+
+    def _add_cluster_props(f):
+        centroid = f.geometry().centroid(1)
+        coords = centroid.coordinates()
+        area_m2 = f.geometry().area(1)
+        return f.set({
+            "lon": coords.get(0),
+            "lat": coords.get(1),
+            "area_m2": area_m2,
+            "pixel_count_est": area_m2.divide(scale * scale),
+        })
+
+    top_clusters = (
+        failed_vectors
+        .map(_add_cluster_props)
+        .sort("area_m2", False)
+        .limit(FAILED_DIAG_N)
+    )
+
+    features = top_clusters.getInfo().get("features", [])
+
+    out = []
+    for i, f in enumerate(features):
+        props = f["properties"]
+
+        lon = float(props["lon"])
+        lat = float(props["lat"])
+        area_m2 = float(props["area_m2"])
+        pixel_count_est = float(props["pixel_count_est"])
+
+        out.append({
+            "id": f"failed_cluster_{i+1}",
+            "cluster_rank": i + 1,
+            "lon": lon,
+            "lat": lat,
+            "area_m2": area_m2,
+            "pixel_count_est": pixel_count_est,
+            "geometry": ee.Geometry.Point([lon, lat]).buffer(FAILED_DIAG_RADIUS_M),
+        })
+
+    return out
+
+def extract_failed_timeseries(example: dict) -> list[dict]:
+    """
+    Extract monthly mean spectral indices around one failed location.
+    RRI is recomputed for every monthly composite.
+    """
+    rows = []
+    geom = example["geometry"]
+
+    for ws, we, label in windows:
+        try:
+            current = make_composite(ws, we)
+
+            rri_t = compute_rri(
+                recent=current,
+                postfire=postfire_composite,
+                prefire=prefire_composite,
+            )
+
+            img = (
+                current
+                .select(["NDVI", "NDRE", "NDMI", "BSI", "NDWI", "NBR"])
+                .addBands(rri_t)
+            )
+
+            stats = img.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=geom,
+                scale=int(exp.get("scale", 20)),
+                maxPixels=int(exp.get("max_pixels", 1e9)),
+                bestEffort=True,
+            ).getInfo() or {}
+
+        except ee.EEException as e:
+            print(f"  {example['id']} {label} skipped: {e}")
+            stats = {}
+
+        rows.append({
+            "example_id": example["id"],
+            "cluster_rank": example.get("cluster_rank"),
+            "lon": example["lon"],
+            "lat": example["lat"],
+            "radius_m": FAILED_DIAG_RADIUS_M,
+            "cluster_area_m2": example.get("area_m2"),
+            "cluster_pixel_count_est": example.get("pixel_count_est"),
+            "recovery_class": 3,
+            "date": ws,
+            "label": label,
+            "NDVI": stats.get("NDVI"),
+            "RRI": stats.get("RRI"),
+            "NDRE": stats.get("NDRE"),
+            "BSI": stats.get("BSI"),
+            "NDMI": stats.get("NDMI"),
+            "NDWI": stats.get("NDWI"),
+            "NBR": stats.get("NBR"),
+})
+
+    return rows
+
+
+def make_failed_popup_table(example_id: str) -> str:
+    """
+    Build a compact scrollable HTML table for the Folium popup.
+    """
+    rows = [r for r in failed_diag_rows if r["example_id"] == example_id]
+
+    table_rows = ""
+    for r in rows:
+        table_rows += (
+            "<tr>"
+            f"<td>{r['label']}</td>"
+            f"<td>{_fmt(r['NDVI'])}</td>"
+            f"<td>{_fmt(r['RRI'])}</td>"
+            f"<td>{_fmt(r['NDRE'])}</td>"
+            f"<td>{_fmt(r['BSI'])}</td>"
+            f"<td>{_fmt(r['NDMI'])}</td>"
+            f"<td>{_fmt(r['NBR'])}</td>"
+            "</tr>"
+        )
+
+    return f"""
+    <div style="max-height:300px; overflow-y:auto;">
+      <table style="border-collapse:collapse; font-size:11px; width:100%;">
+        <thead>
+          <tr>
+            <th style="border-bottom:1px solid #999;">Date</th>
+            <th style="border-bottom:1px solid #999;">NDVI</th>
+            <th style="border-bottom:1px solid #999;">RRI</th>
+            <th style="border-bottom:1px solid #999;">NDRE</th>
+            <th style="border-bottom:1px solid #999;">BSI</th>
+            <th style="border-bottom:1px solid #999;">NDMI</th>
+            <th style="border-bottom:1px solid #999;">NBR</th>
+          </tr>
+        </thead>
+        <tbody>
+          {table_rows}
+        </tbody>
+      </table>
+    </div>
+    """
+
+
+if FAILED_DIAG_ENABLED:
+    import csv
+
+    print("Sampling failed recovery pixels for diagnostics...")
+    failed_examples = sample_failed_locations()
+
+    print(f"  sampled {len(failed_examples)} failed diagnostic locations")
+
+    for ex in failed_examples:
+        print(f"Extracting time series for {ex['id']}...")
+        failed_diag_rows.extend(extract_failed_timeseries(ex))
+
+    out_diag_csv = SRC_DIR / f"failed_diagnostics_{region_name}.csv"
+
+    if failed_diag_rows:
+        with open(out_diag_csv, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "example_id", "cluster_rank",
+                    "lon", "lat", "radius_m",
+                    "cluster_area_m2", "cluster_pixel_count_est",
+                    "recovery_class",
+                    "date", "label",
+                    "NDVI", "RRI", "NDRE", "BSI", "NDMI", "NDWI", "NBR",
 ]
-ESTAB_PALETTE = [c for _, _, c in sorted(ESTAB_CLASSES)]
-VIS_ESTAB = {"min": 0, "max": 3, "palette": ESTAB_PALETTE}
+            )
+            writer.writeheader()
+            writer.writerows(failed_diag_rows)
+
+        print(f"Failed-pixel diagnostics CSV → {out_diag_csv}")
+    else:
+        print("No failed pixels found for diagnostics.")
+
+RECOVERY_CLASSES = [
+    (0, "Uncertain / water / insufficient data", "#888888"),
+    (1, "Recovering well",                       "#1f5e1f"),
+    (2, "Recovering, but weak",                 "#a8d666"),
+    (3, "Not recovering / failed",              "#ff1a1a"),  # glowing/bright red
+    (4, "Outside burn recovery assessment",             "#4b2e1f"),  # dark brown
+]
+RECOVERY_PALETTE = [c for _, _, c in sorted(RECOVERY_CLASSES)]
+VIS_RECOVERY_CLASS = {"min": 0, "max": 4, "palette": RECOVERY_PALETTE}
+
+GUARD_CLASSES = [
+    (0, "Clear recovery signal",                  "#2f7f3f"),
+    (1, "Water / insufficient observations",      "#888888"),
+    (2, "Possible later disturbance",             "#7d2222"),
+    (3, "Mixed recovery signal",                  "#f4a261"),
+    (4, "Outside burn recovery assessment",       "#4a7c59"),
+]
+GUARD_PALETTE = [c for _, _, c in sorted(GUARD_CLASSES)]
+VIS_GUARDS = {"min": 0, "max": 4, "palette": GUARD_PALETTE}
 
 # Diagnostic: per-class pixel count and percentage over the AOI.
 try:
-    _hist = establishment_status.reduceRegion(
+    _hist = recovery_class.reduceRegion(
         reducer   = ee.Reducer.frequencyHistogram(),
         geometry  = aoi,
         scale     = int(exp.get("scale", 20)),
         maxPixels = int(exp.get("max_pixels", 1e9)),
         bestEffort= True,
     ).getInfo()
-    _counts = _hist.get("establishment_status") or {}
+    _counts = _hist.get("recovery_class") or {}
     # frequencyHistogram returns string-keyed counts; coerce + total
     _counts = {int(float(k)): int(v) for k, v in _counts.items()}
     _total  = sum(_counts.values()) or 1
-    print(f"Establishment status histogram ({region_name}):")
-    for _idx, _name, _ in ESTAB_CLASSES:
+    print(f"Recovery class histogram ({region_name}):")
+    for _idx, _name, _ in RECOVERY_CLASSES:
         _n = _counts.get(_idx, 0)
         _pct = 100.0 * _n / _total
         print(f"  {_name:26s}  {_n:>10,d} px  ({_pct:5.1f}%)")
 except ee.EEException as _e:
-    print(f"  (establishment histogram unavailable: {_e})")
+    print(f"  (recovery-class histogram unavailable: {_e})")
+
+try:
+    _hist = guard_flags.reduceRegion(
+        reducer   = ee.Reducer.frequencyHistogram(),
+        geometry  = aoi,
+        scale     = int(exp.get("scale", 20)),
+        maxPixels = int(exp.get("max_pixels", 1e9)),
+        bestEffort= True,
+    ).getInfo()
+    _counts = _hist.get("guard_flags") or {}
+    _counts = {int(float(k)): int(v) for k, v in _counts.items()}
+    _total  = sum(_counts.values()) or 1
+    print(f"Guard-flag histogram ({region_name}):")
+    for _idx, _name, _ in GUARD_CLASSES:
+        _n = _counts.get(_idx, 0)
+        _pct = 100.0 * _n / _total
+        print(f"  {_name:34s}  {_n:>10,d} px  ({_pct:5.1f}%)")
+except ee.EEException as _e:
+    print(f"  (guard-flag histogram unavailable: {_e})")
 
 VIS = {
     "RGB":    {"bands": ["B4","B3","B2"], "params": {"min":0,"max":2800,"gamma":1.4}},
     "NDVI":   {"bands": ["NDVI"],  "params": {"min":-0.1,"max":0.85,
                "palette":["saddlebrown","khaki","limegreen","darkgreen"]}},
-    "LAI-e":  {"bands": ["laie"],  "params": {"min":0,"max":6,
-               "palette":["white","yellow","limegreen","darkgreen"]}},
-    "FCOVER": {"bands": ["fcover"],"params": {"min":0,"max":1,
-               "palette":["white","lightgreen","forestgreen"]}},
     "BSI":    {"bands": ["BSI"],   "params": {"min":-0.3,"max":0.4,
                "palette":["darkgreen","white","orange","saddlebrown"]}},
     "NDWI":   {"bands": ["NDWI"],  "params": {"min":-0.3,"max":0.5,
@@ -508,25 +1298,189 @@ VIS = {
 VIS_AVAILABLE = {k: v for k, v in VIS.items()
                  if all(b in ALL_BANDS + ["B4","B3","B2"] for b in v["bands"])}
 
-try:
-    # Use folium directly. geemap.Map (ipyleaflet) produces HTML that
-    # depends on Jupyter widgets and fails outside a notebook
-    # ("Class null not found in module @jupyter-widgets/base").
-    # geemap.foliumap fails to import on the current xyzservices version.
-    # Raw folium is reliable, self-contained, and ships with a working
-    # LayerControl widget.
-    import folium
+# ── Failed diagnostic graphs from CSV ────────────────────────────────────────
+# This reads failed_diagnostics_<region>.csv, keeps only failed examples,
+# limits them to FAILED_DIAG_N, creates one PNG graph per example, and embeds
+# those graphs in the Folium map popups.
 
-    # Centre the map on the AOI bounds (reuse `bounds` already fetched above)
+failed_diag_plot_paths = {}
+failed_diag_points = []
+
+
+def build_failed_diagnostic_plots_from_csv() -> None:
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+
+    csv_path = SRC_DIR / f"failed_diagnostics_{region_name}.csv"
+
+    if not csv_path.exists():
+        print(f"No failed diagnostics CSV found: {csv_path}")
+        return
+
+    df = pd.read_csv(csv_path)
+
+    # Keep only failed pixels if the CSV contains the recovery class.
+    if "recovery_class" in df.columns:
+        df = df[df["recovery_class"].astype(int) == 3]
+
+    # Exclude outside burn recovery assessment if this column exists.
+    if "guard_flag" in df.columns:
+        df = df[df["guard_flag"].astype(int) != 4]
+
+    # Force only the requested number of examples.
+    # If cluster_rank exists, keep the largest clusters first.
+    if "cluster_rank" in df.columns:
+        keep_ids = (
+            df[["example_id", "cluster_rank"]]
+            .drop_duplicates()
+            .sort_values("cluster_rank")
+            .head(FAILED_DIAG_N)["example_id"]
+            .tolist()
+        )
+    else:
+        keep_ids = (
+            df["example_id"]
+            .drop_duplicates()
+            .head(FAILED_DIAG_N)
+            .tolist()
+        )
+
+    df = df[df["example_id"].isin(keep_ids)]
+
+    if df.empty:
+        print("No failed diagnostic points left after filtering.")
+        return
+
+    df["date"] = pd.to_datetime(df["date"])
+
+    for ex_id, sub in df.groupby("example_id"):
+        sub = sub.sort_values("date").copy()
+
+        lon = float(sub["lon"].iloc[0])
+        lat = float(sub["lat"].iloc[0])
+
+        if "radius_m" in sub.columns:
+            radius_m = int(sub["radius_m"].iloc[0])
+        else:
+            radius_m = FAILED_DIAG_RADIUS_M
+
+        fig, axes = plt.subplots(3, 1, figsize=(8.5, 7), sharex=True)
+
+        # Panel 1 — recovery / canopy signal
+        axes[0].plot(
+            sub["date"], sub["NDVI"],
+            marker="o", linewidth=1.5, label="NDVI"
+        )
+        axes[0].plot(
+            sub["date"], sub["RRI"],
+            marker="s", linestyle="--", linewidth=1.5, label="RRI"
+        )
+        axes[0].plot(
+            sub["date"], sub["NDRE"],
+            marker="o", linewidth=1.2, label="NDRE"
+        )
+        axes[0].axhline(
+            T_RRI_LOW,
+            linestyle=":",
+            linewidth=1,
+            label=f"RRI failed threshold ({T_RRI_LOW})",
+        )
+        axes[0].set_ylabel("Recovery / canopy")
+        axes[0].legend(fontsize=8, ncol=2)
+        axes[0].grid(alpha=0.25)
+
+        # Panel 2 — soil / moisture signal
+        axes[1].plot(
+            sub["date"], sub["BSI"],
+            marker="o", linewidth=1.5, label="BSI"
+        )
+        axes[1].plot(
+            sub["date"], sub["NDMI"],
+            marker="o", linewidth=1.5, label="NDMI"
+        )
+        axes[1].plot(
+            sub["date"], sub["NDWI"],
+            marker="o", linewidth=1.2, label="NDWI"
+        )
+        axes[1].axhline(
+            T_BSI_HIGH,
+            linestyle=":",
+            linewidth=1,
+            label=f"High BSI threshold ({T_BSI_HIGH})",
+        )
+        axes[1].set_ylabel("Soil / moisture")
+        axes[1].legend(fontsize=8, ncol=2)
+        axes[1].grid(alpha=0.25)
+
+        # Panel 3 — burn / disturbance signal
+        axes[2].plot(
+            sub["date"], sub["NBR"],
+            marker="o", linewidth=1.5, label="NBR"
+        )
+        axes[2].set_ylabel("NBR")
+        axes[2].legend(fontsize=8)
+        axes[2].grid(alpha=0.25)
+
+        if PLANTING is not None:
+            for ax in axes:
+                ax.axvline(PLANTING, linestyle="--", linewidth=1)
+
+        axes[2].xaxis.set_major_locator(mdates.YearLocator())
+        axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+
+        fig.suptitle(
+            f"{ex_id} — failed recovery diagnostic\n"
+            f"lon={lon:.5f}, lat={lat:.5f}, radius={radius_m} m",
+            fontsize=11,
+        )
+
+        plt.tight_layout()
+
+        out_png = SRC_DIR / f"{ex_id}_{region_name}_diagnostic.png"
+        fig.savefig(out_png, dpi=140)
+        plt.close(fig)
+
+        failed_diag_plot_paths[ex_id] = out_png
+        failed_diag_points.append({
+            "id": ex_id,
+            "lon": lon,
+            "lat": lat,
+            "radius_m": radius_m,
+        })
+
+        print(f"Saved diagnostic plot → {out_png}")
+
+
+if FAILED_DIAG_ENABLED:
+    build_failed_diagnostic_plots_from_csv()
+
+
+# ── Folium map export ────────────────────────────────────────────────────────
+try:
+    import folium
+    import base64
+
+    # Centre the map on the AOI bounds.
     _lons = [c[0] for c in bounds]
     _lats = [c[1] for c in bounds]
     _center = [(min(_lats) + max(_lats)) / 2, (min(_lons) + max(_lons)) / 2]
-    fmap = folium.Map(location=_center, zoom_start=10, tiles="OpenStreetMap",
-                      control_scale=True)
 
-    def _add_ee_layer(ee_image: ee.Image, params: dict, name: str,
-                      show: bool = True) -> None:
+    fmap = folium.Map(
+        location=_center,
+        zoom_start=10,
+        tiles="OpenStreetMap",
+        control_scale=True,
+    )
+
+    def _add_ee_layer(
+        ee_image: ee.Image,
+        params: dict,
+        name: str,
+        show: bool = True,
+    ) -> None:
         map_id = ee_image.getMapId(params)
+
         folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="Google Earth Engine",
@@ -536,100 +1490,264 @@ try:
             show=show,
         ).add_to(fmap)
 
-    # Single-period summer raster (visible by default)
+    # Single-period summer raster layers.
     for title, vc in VIS_AVAILABLE.items():
-        _add_ee_layer(raster.select(vc["bands"]), vc["params"], title, show=True)
-    # Establishment status (M3) — headline product, visible by default
-    _add_ee_layer(establishment_status, VIS_ESTAB, "Establishment status",
-                  show=True)
-    # Early & recent seasonal composites (RGB) — hidden by default
-    _RGB_PARAMS = {"min": 0, "max": 2800, "gamma": 1.4}
-    _add_ee_layer(early_composite.select(["B4", "B3", "B2"]),  _RGB_PARAMS,
-                  f"Early RGB ({EARLY_YEARS[0]}–{EARLY_YEARS[1]})",  show=False)
-    _add_ee_layer(recent_composite.select(["B4", "B3", "B2"]), _RGB_PARAMS,
-                  f"Recent RGB ({RECENT_YEARS[0]}–{RECENT_YEARS[1]})", show=False)
-    # Per-index change layers — hidden by default; tick in the layer panel
-    for _band, _params in VIS_CHANGE.items():
-        _add_ee_layer(change_img.select(_band), _params, _band, show=False)
+        _add_ee_layer(
+            raster.select(vc["bands"]),
+            vc["params"],
+            title,
+            show=True,
+        )
 
-    # AOI outline as a true vector overlay (clearer than an EE tile mask)
+    # RRI continuous layer.
+    _add_ee_layer(
+        rri_img,
+        {
+            "min": 0,
+            "max": 1,
+            "palette": [
+                "#7d2222",
+                "#ff6600",
+                "#ffe066",
+                "#a8d666",
+                "#1f5e1f",
+            ],
+        },
+        f"RRI (good≥{T_RRI_GOOD}, failed<{T_RRI_LOW})",
+        show=False,
+    )
+
+    # Main recovery class map.
+    _add_ee_layer(
+        recovery_class,
+        VIS_RECOVERY_CLASS,
+        "Recovery class",
+        show=True,
+    )
+
+    # Uncertainty / guard flags.
+    _add_ee_layer(
+        guard_flags,
+        VIS_GUARDS,
+        "Uncertainty flags",
+        show=False,
+    )
+
+    # Forest mask.
+    if forest_mask_img is not None:
+        _add_ee_layer(
+            forest_mask_img,
+            {
+                "min": 0,
+                "max": 1,
+                "palette": ["#dddddd", "#1a6b1a"],
+            },
+            f"Forest mask (DW {FM_YEAR}, p≥{FM_THRESHOLD})",
+            show=False,
+        )
+
+    # Pre-fire, post-fire, and recent RGB composites.
+    _RGB_PARAMS = {
+        "min": 0,
+        "max": 2800,
+        "gamma": 1.4,
+    }
+
+    _add_ee_layer(
+        prefire_composite.select(["B4", "B3", "B2"]),
+        _RGB_PARAMS,
+        f"Pre-fire RGB ({PREFIRE_YEARS[0]} Apr–May)",
+        show=False,
+    )
+
+    _add_ee_layer(
+        postfire_composite.select(["B4", "B3", "B2"]),
+        _RGB_PARAMS,
+        f"Post-fire RGB ({POSTFIRE_YEARS[0]}–{POSTFIRE_YEARS[1]})",
+        show=False,
+    )
+
+    _add_ee_layer(
+        recent_composite.select(["B4", "B3", "B2"]),
+        _RGB_PARAMS,
+        f"Recent RGB ({RECENT_YEARS[0]}–{RECENT_YEARS[1]})",
+        show=False,
+    )
+
+    # AOI outline.
     folium.GeoJson(
         aoi.getInfo(),
         name="AOI",
-        style_function=lambda _f: {"color": "red", "weight": 2, "fillOpacity": 0},
+        style_function=lambda _f: {
+            "color": "red",
+            "weight": 2,
+            "fillOpacity": 0,
+        },
     ).add_to(fmap)
 
-    # Floating HTML legend for the categorical "Establishment status" layer.
+    # Failed diagnostic graph markers.
+    if FAILED_DIAG_ENABLED and failed_diag_points:
+        failed_group = folium.FeatureGroup(
+            name="Failed-pixel diagnostic graphs",
+            show=True,
+        )
+
+        for ex in failed_diag_points:
+            ex_id = ex["id"]
+            plot_path = failed_diag_plot_paths.get(ex_id)
+
+            if plot_path is None or not Path(plot_path).exists():
+                continue
+
+            with open(plot_path, "rb") as f:
+                img64 = base64.b64encode(f.read()).decode("utf-8")
+
+            popup_html = f"""
+            <div style="width:720px;">
+              <h4 style="margin:4px 0 6px 0;">{ex_id}</h4>
+              <div style="font-size:12px; margin-bottom:8px;">
+                <b>Recovery class:</b> 3 — Not recovering / failed<br>
+                <b>Location:</b> {ex['lat']:.5f}, {ex['lon']:.5f}<br>
+                <b>Buffer radius:</b> {ex['radius_m']} m
+              </div>
+              <img src="data:image/png;base64,{img64}" width="700">
+            </div>
+            """
+
+            folium.CircleMarker(
+                location=[ex["lat"], ex["lon"]],
+                radius=7,
+                color="#ff0000",
+                fill=True,
+                fill_color="#ff0000",
+                fill_opacity=0.9,
+                popup=folium.Popup(popup_html, max_width=750),
+                tooltip=f"{ex_id} — failed recovery graphs",
+            ).add_to(failed_group)
+
+        failed_group.add_to(fmap)
+
+    # Legend.
     _legend_rows = "".join(
         f'<div style="display:flex;align-items:center;margin:2px 0;">'
         f'  <span style="display:inline-block;width:14px;height:14px;'
         f'background:{c};border:1px solid #555;margin-right:6px;"></span>'
         f'  <span>{idx} — {name}</span>'
         f'</div>'
-        for idx, name, c in ESTAB_CLASSES
+        for idx, name, c in RECOVERY_CLASSES
     )
+
+    _stress_rows = "".join(
+        f'<div style="display:flex;align-items:center;margin:2px 0;">'
+        f'  <span style="display:inline-block;width:14px;height:14px;'
+        f'background:{c};border:1px solid #555;margin-right:6px;"></span>'
+        f'  <span>{idx} — {name}</span>'
+        f'</div>'
+        for idx, name, c in GUARD_CLASSES
+    )
+
     _legend_html = (
         '<div style="position: fixed; bottom: 30px; right: 30px; z-index: 9999;'
         '  background: rgba(255,255,255,0.95); padding: 10px 12px;'
         '  border: 1px solid #888; border-radius: 4px;'
-        '  font: 12px/1.3 system-ui, sans-serif; max-width: 240px;'
+        '  font: 12px/1.3 system-ui, sans-serif; max-width: 360px;'
         '  box-shadow: 0 2px 6px rgba(0,0,0,0.2);">'
-        '<div style="font-weight:600;margin-bottom:6px;">Establishment status</div>'
+        '<div style="font-weight:600;margin-bottom:6px;">Recovery class</div>'
         f'{_legend_rows}'
+        '<div style="font-weight:600;margin:10px 0 6px 0;">Uncertainty flags</div>'
+        f'{_stress_rows}'
         '<div style="font-size:10px;color:#666;margin-top:6px;">'
-        'Greening signal only — not proof of tree survival.'
+        'Recovery class expresses a spectral trajectory consistent with woody '
+        'vegetation establishment, not individual tree health.'
         '</div>'
         '</div>'
     )
+
     fmap.get_root().html.add_child(folium.Element(_legend_html))
 
     folium.LayerControl(collapsed=False).add_to(fmap)
+
     out_map = SRC_DIR / f"map_{region_name}.html"
     fmap.save(str(out_map))
+
     print(f"Interactive map → {out_map}")
 
+
 except ImportError:
-    import urllib.request, io
+    import urllib.request
+    import io
+    import matplotlib.pyplot as plt
     from PIL import Image
 
     n_panels = len(VIS_AVAILABLE)
+
     fig3, axes3 = plt.subplots(1, n_panels, figsize=(4 * n_panels, 4))
-    fig3.suptitle(f"{region_name} — {RASTER_START} to {RASTER_END}", fontsize=11)
+
+    if n_panels == 1:
+        axes3 = [axes3]
+
+    fig3.suptitle(
+        f"{region_name} — {RASTER_START} to {RASTER_END}",
+        fontsize=11,
+    )
+
     for ax, (title, vc) in zip(axes3, VIS_AVAILABLE.items()):
         url = raster.select(vc["bands"]).getThumbURL(
-            {**vc["params"], "region": bounds, "dimensions": 512, "format": "png"}
+            {
+                **vc["params"],
+                "region": bounds,
+                "dimensions": 512,
+                "format": "png",
+            }
         )
+
         with urllib.request.urlopen(url) as resp:
             img = Image.open(io.BytesIO(resp.read()))
+
         ax.imshow(img)
         ax.set_title(title, fontsize=9)
         ax.axis("off")
+
     plt.tight_layout()
+
     out3 = SRC_DIR / f"raster_{region_name}.png"
     fig3.savefig(out3, dpi=150)
     plt.show()
+
     print(f"Saved → {out3}")
 
-    # Change-band thumbnails (vision M2)
+    # Change-band thumbnails.
     fig4, axes4 = plt.subplots(2, 3, figsize=(12, 8))
+
     fig4.suptitle(
         f"{region_name} — Change layers "
         f"(recent {RECENT_YEARS[0]}–{RECENT_YEARS[1]} − "
-        f"early {EARLY_YEARS[0]}–{EARLY_YEARS[1]}, months "
-        f"{CMP_MONTHS[0]}–{CMP_MONTHS[1]-1})",
+        f"post-fire {POSTFIRE_YEARS[0]}–{POSTFIRE_YEARS[1]}, months "
+        f"{CMP_MONTHS[0]}–{CMP_MONTHS[1] - 1})",
         fontsize=11,
     )
+
     for ax, (band, params) in zip(axes4.flat, VIS_CHANGE.items()):
         url = change_img.select(band).getThumbURL(
-            {**params, "region": bounds, "dimensions": 512, "format": "png"}
+            {
+                **params,
+                "region": bounds,
+                "dimensions": 512,
+                "format": "png",
+            }
         )
+
         with urllib.request.urlopen(url) as resp:
             img = Image.open(io.BytesIO(resp.read()))
+
         ax.imshow(img)
         ax.set_title(band, fontsize=9)
         ax.axis("off")
+
     plt.tight_layout()
+
     out4 = SRC_DIR / f"change_{region_name}.png"
     fig4.savefig(out4, dpi=150)
     plt.show()
+
     print(f"Saved → {out4}")

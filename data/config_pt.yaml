@@ -24,18 +24,58 @@ temporal:
 # (vision.md Milestones 1 & 2). Early window starts at 2017 because the
 # Cloud Score Plus collection only covers 2017-04 onwards.
 comparison:
-  early_years:  [2017, 2018]    # inclusive year range
-  recent_years: [2022, 2025]
-  months:       [5, 9]          # May (5) to Sep (9), exclusive on end
+  # S2_SR_HARMONIZED + Cloud Score Plus both start 2017-03-28, so pre-fire
+  # must be within 2017 — April–May is just before the June 17 fire.
+  prefire_years:  [2017, 2017]  # pre-fire reference — same year as fire, before it
+  prefire_months: [4, 6]        # Apr (4) to Jun (6), exclusive end: captures spring greenness before June 17 fire
+  postfire_years: [2017, 2017]  # fire damage baseline — summer 2017 (fire scar)
+  recent_years:   [2022, 2025]
+  months:         [5, 9]        # May (5) to Sep (9), exclusive on end — used for postfire + recent
 
-# Establishment status map thresholds (vision.md Milestone 3).
-# Vision says: "thresholds should initially be empirical and adjusted after
-# visual inspection". Tune these after looking at the first classified map.
+# Pre-fire forest mask using Dynamic World tree probability.
+# Pixels with tree probability >= threshold in the baseline year are kept;
+# all others (cropland, built-up, water, etc.) are excluded from the
+# recovery assessment. Using 2016 avoids the post-fire artefact that would
+# affect a 2017 classification.
+forest_mask:
+  enabled: true
+  source: dynamic_world          # GOOGLE/DYNAMICWORLD/V1
+  year: 2016                     # pre-fire baseline year
+  months: [5, 9]                 # May–Aug summer window
+  tree_prob_threshold: 0.60      # DW 'trees' probability >= this → forest pixel
+
+
 classification:
-  change_magnitude:     0.05    # |Δ| below this is treated as "stable"
-  ndvi_low_threshold:   0.30    # NDVI_recent below this → weak signal
-  bsi_high_threshold:   0.20    # BSI_recent above this  → bare-soil signal
-  ndwi_water_threshold: 0.20    # NDWI_recent above this → standing-water guard
+  # ── RRI-based recovery class thresholds ───────────────────────────────────
+  # RRI = (recent_NDVI − postfire_NDVI) / (prefire_NDVI − postfire_NDVI)
+  #   1.0 = fully back to pre-fire;  0 = at post-fire level;  <0 = worse
+  rri_good_threshold:    0.80   # RRI ≥ this → recovering well  (≥80% of pre-fire NDVI restored)
+  rri_low_threshold:     0.30   # RRI < this → failed           (<30% of pre-fire NDVI restored)
+  rri_min_denominator:   0.10   # min (prefire − postfire) NDVI required to trust RRI
+  # ── Burn severity mask (restricts RRI analysis to fire-affected pixels) ────
+  burn_severity_threshold: 0.10  # dNBR (prefire − postfire NBR) ≥ this → fire-affected
+                                  # USGS low-severity floor; below this = stable/unburned forest
+  # ── Secondary canopy-quality check (Class 1 only) ─────────────────────────
+  ndre_good_threshold:   0.18   # NDRE ≥ this confirms woody canopy, not just herbaceous green-up
+  # ── Guard-flag thresholds ─────────────────────────────────────────────────
+  ndvi_change_good_threshold: 0.09  # used in mixed-signal guard flag
+  bsi_high_threshold:    0.09   # persistent bare soil → mixed-signal or failed flag
+  ndwi_water_threshold:  0.15   # likely water or non-vegetation pixel
+  disturbance_threshold: 0.09   # NBR_change < -this suggests new disturbance
+
+# NDMI 
+# NBR 
+
+failed_diagnostics:
+  enabled: false
+  n_examples: 5
+  radius_m: 40
+
+sensitivity_analysis:
+  enabled: true
+  burn_severity_threshold_values: [0.05, 0.075, 0.10, 0.125, 0.15]
+  rri_good_threshold_values:      [0.70, 0.75, 0.80, 0.85, 0.90]
+  rri_low_threshold_values:       [0.20, 0.25, 0.30, 0.35, 0.40]
 
 variables:
   model: s2biophys                # options: s2biophys, sl2p
@@ -46,7 +86,7 @@ export:
   collection_path: "EO4Change/portugal"
   project_id: "daring-pier-498809-k0"
   crs: "EPSG:32629"               # UTM zone 29N — best accuracy for central Portugal
-  scale: 100                      # metres per pixel
+  scale: 100                # metres per pixel
   max_pixels: 100_000_000_000
 
 options:
