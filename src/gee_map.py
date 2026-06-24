@@ -1,6 +1,6 @@
 """
 EO4Change Group 4 — Folium map builder with dynamic legend, Chart.js panel,
-                     improved failed-cluster popups with interactive charts.
+                     custom grouped layer panel, improved failed-cluster popups.
 """
 import ee
 import json
@@ -29,38 +29,38 @@ def _gradient_legend(title: str, palette: list, vmin: float, vmax: float,
     grad = ", ".join(palette)
     mid  = (vmin + vmax) / 2
     return (
-        f'<div style="font-weight:600;margin-bottom:5px;">{title}</div>'
-        f'<div style="height:12px;background:linear-gradient(to right,{grad});'
-        f'border:1px solid #aaa;border-radius:2px;margin-bottom:4px;"></div>'
-        f'<div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px;">'
+        f'<div style="font-weight:600;margin-bottom:6px;font-size:13px;">{title}</div>'
+        f'<div style="height:14px;background:linear-gradient(to right,{grad});'
+        f'border:1px solid #aaa;border-radius:2px;margin-bottom:5px;"></div>'
+        f'<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">'
         f'  <span>{vmin:.2g}</span><span>{mid:.2g}</span><span>{vmax:.2g}</span>'
         f'</div>'
-        + (f'<div style="font-size:10px;color:#555;">{unit}</div>' if unit else '')
-        + (f'<div style="font-size:10px;color:#777;font-style:italic;margin-top:3px;">{note}</div>'
+        + (f'<div style="font-size:11px;color:#555;">{unit}</div>' if unit else '')
+        + (f'<div style="font-size:11px;color:#777;font-style:italic;margin-top:4px;">{note}</div>'
            if note else '')
     )
 
 
 def _categorical_legend(title: str, classes: list, note: str = "") -> str:
     rows = "".join(
-        f'<div style="display:flex;align-items:center;margin:2px 0;">'
-        f'<span style="display:inline-block;width:14px;height:14px;background:{c};'
-        f'border:1px solid #555;margin-right:6px;flex-shrink:0;"></span>'
-        f'<span style="font-size:11px;">{idx} — {lbl}</span></div>'
+        f'<div style="display:flex;align-items:center;margin:3px 0;">'
+        f'<span style="display:inline-block;width:16px;height:16px;background:{c};'
+        f'border:1px solid #555;margin-right:7px;flex-shrink:0;"></span>'
+        f'<span style="font-size:12px;">{idx} — {lbl}</span></div>'
         for idx, lbl, c in classes
     )
     return (
-        f'<div style="font-weight:600;margin-bottom:5px;">{title}</div>'
+        f'<div style="font-weight:600;margin-bottom:6px;font-size:13px;">{title}</div>'
         + rows
-        + (f'<div style="font-size:10px;color:#777;font-style:italic;margin-top:5px;">{note}</div>'
+        + (f'<div style="font-size:11px;color:#777;font-style:italic;margin-top:6px;">{note}</div>'
            if note else '')
     )
 
 
 def _text_legend(title: str, note: str = "") -> str:
     return (
-        f'<div style="font-weight:600;margin-bottom:4px;">{title}</div>'
-        f'<div style="font-size:10px;color:#777;font-style:italic;">'
+        f'<div style="font-weight:600;margin-bottom:5px;font-size:13px;">{title}</div>'
+        f'<div style="font-size:11px;color:#777;font-style:italic;">'
         f'{note or "No radiometric scale."}</div>'
     )
 
@@ -175,19 +175,23 @@ def build_folium_map(
     fmap = folium.Map(location=_center, zoom_start=10, tiles="OpenStreetMap", control_scale=True)
 
     _visible_on_load: list = []
+    # Maps display name → Folium JS variable name (e.g. "tile_abc123...")
+    _layer_js_names: dict[str, str] = {}
 
     def _add_ee_layer(ee_image: ee.Image, params: dict, name: str, show: bool = False) -> None:
         if show:
             _visible_on_load.append(name)
         map_id = ee_image.getMapId(params)
-        folium.TileLayer(
+        tile = folium.TileLayer(
             tiles=map_id["tile_fetcher"].url_format,
             attr="Google Earth Engine",
             name=name,
             overlay=True,
             control=True,
             show=show,
-        ).add_to(fmap)
+        )
+        tile.add_to(fmap)
+        _layer_js_names[name] = tile.get_name()
 
     # Composite label strings (used in legends and layer names)
     _RGB_PARAMS = {"min": 0, "max": 2800, "gamma": 1.4}
@@ -225,9 +229,10 @@ def build_folium_map(
     _add_ee_layer(guard_flags, VIS_GUARDS, "Uncertainty flags", show=False)
 
     # Forest mask
+    _fm_key = f"Forest mask (DW {FM_YEAR}, p≥{FM_THRESHOLD})"
     if forest_mask_img is not None:
         _add_ee_layer(forest_mask_img, {"min": 0, "max": 1, "palette": ["#dddddd", "#1a6b1a"]},
-                      f"Forest mask (DW {FM_YEAR}, p≥{FM_THRESHOLD})", show=False)
+                      _fm_key, show=False)
 
     # Pre-fire, post-fire, recent RGB composites
     _add_ee_layer(prefire_composite.select(["B4", "B3", "B2"]),  _RGB_PARAMS, early_label,   show=False)
@@ -253,12 +258,15 @@ def build_folium_map(
                       {"min": 0, "max": 3, "palette": _STRESS_PALETTE},
                       "LST stress class (Landsat)", show=False)
 
-    # AOI outline
-    folium.GeoJson(
+    # AOI outline — capture JS name for custom panel
+    _aoi_geojson = folium.GeoJson(
         aoi.getInfo(),
         name="AOI",
         style_function=lambda _f: {"color": "red", "weight": 2, "fillOpacity": 0},
-    ).add_to(fmap)
+    )
+    _aoi_geojson.add_to(fmap)
+    _layer_js_names["AOI"] = _aoi_geojson.get_name()
+    _visible_on_load.append("AOI")
 
     # ── Build cluster_ts_json for CLUSTER_DATA JS variable ───────────────────
     cluster_ts_json: dict = {}
@@ -273,7 +281,7 @@ def build_folium_map(
 
     # ── Improved failed cluster markers ──────────────────────────────────────
     if failed_diag_points:
-        failed_group = folium.FeatureGroup(name="Failed-pixel diagnostic graphs", show=True)
+        failed_group = folium.FeatureGroup(name="Failed-pixel diagnostics", show=True)
 
         for ex in failed_diag_points:
             ex_id     = ex["id"]
@@ -284,7 +292,6 @@ def build_folium_map(
 
             reasoning_html = _cluster_reasoning(ex_rows, T_RRI_LOW, T_BSI_HIGH)
 
-            # Static PNG (base64 encoded)
             png_img_tag = ""
             if plot_path is not None and Path(plot_path).exists():
                 with open(plot_path, "rb") as f:
@@ -294,7 +301,6 @@ def build_folium_map(
                     f'width="660" style="margin-top:8px;display:block;">'
                 )
 
-            # Interactive chart button — only shown when cluster data is available
             _has_ts = ex_id in cluster_ts_json
             chart_btn = (
                 f'<div style="margin-bottom:8px;">'
@@ -330,11 +336,13 @@ def build_folium_map(
             ).add_to(failed_group)
 
         failed_group.add_to(fmap)
+        _layer_js_names["Failed-pixel diagnostics"] = failed_group.get_name()
+        _visible_on_load.append("Failed-pixel diagnostics")
 
     # ── Build _LEGENDS dict ───────────────────────────────────────────────────
     _LEGENDS = build_legends(lst_cfg, early_label, recent_label, postfire_label)
 
-    # ── Dynamic legend JS ─────────────────────────────────────────────────────
+    # ── Dynamic legend (bottom-right, slightly larger) ────────────────────────
     _inner_divs = "\n".join(
         f'<div id="{_safe_id(n)}" '
         f'style="display:{"block" if n in _visible_on_load else "none"};">'
@@ -345,12 +353,12 @@ def build_folium_map(
     _legend_outer = (
         '<div id="dyn-legend" style="'
         'position:fixed;bottom:30px;right:30px;z-index:9999;'
-        'background:rgba(255,255,255,0.95);padding:10px 12px;'
-        'border:1px solid #888;border-radius:4px;'
-        'font:12px/1.3 system-ui,sans-serif;max-width:260px;'
-        'box-shadow:0 2px 6px rgba(0,0,0,0.2);">'
+        'background:rgba(255,255,255,0.97);padding:13px 15px;'
+        'border:1px solid #888;border-radius:5px;'
+        'font:13px/1.4 system-ui,sans-serif;max-width:300px;'
+        'box-shadow:0 2px 8px rgba(0,0,0,0.22);">'
         + _inner_divs
-        + f'<div id="dyn-legend-empty" style="display:{_any_visible_init};font-size:11px;color:#888;">'
+        + f'<div id="dyn-legend-empty" style="display:{_any_visible_init};font-size:12px;color:#888;">'
           f'Toggle a layer to see its legend.</div>'
         + '</div>'
     )
@@ -473,7 +481,7 @@ def build_folium_map(
     var pts_check = TS_DATA.filter(function(r) {{
       return vars.some(function(v) {{ return r[v] !== null && r[v] !== undefined; }});
     }});
-    if (pts_check.length === 0) return;  // no data for this variable — stay hidden
+    if (pts_check.length === 0) return;
     document.getElementById('ts-title').textContent = layerName;
     panel.style.display = 'block';
     var datasets = vars.map(function(v) {{
@@ -631,7 +639,191 @@ def build_folium_map(
 """
     fmap.get_root().script.add_child(folium.Element(_ts_script))
 
-    folium.LayerControl(collapsed=False).add_to(fmap)
+    # ── Custom grouped layer panel (replaces folium.LayerControl) ────────────
+
+    # Main product: 3 layers with opacity sliders
+    _main_product = [
+        ("Recovery class",    "Recovery class",  True,  "#1f5e1f"),
+        ("RRI",               _rri_layer_name,   False, "#9b59b6"),
+        ("Uncertainty flags", "Uncertainty flags", False, "#00b894"),
+    ]
+
+    # Other-layer groups (built dynamically from what was actually added)
+    _other_groups: list[tuple[str, list[tuple[str, bool]]]] = []
+
+    _idx_layers = [(n, n in _visible_on_load)
+                   for n in ["RGB", "NDVI", "BSI", "NDWI", "NBR"]
+                   if n in _layer_js_names]
+    if _idx_layers:
+        _other_groups.append(("Spectral indices", _idx_layers))
+
+    if FM_ENABLED and _fm_key in _layer_js_names:
+        _other_groups.append(("Forest mask", [(_fm_key, False)]))
+
+    _comp_layers = [(n, False) for n in [early_label, postfire_label, recent_label]
+                    if n in _layer_js_names]
+    if _comp_layers:
+        _other_groups.append(("Composites", _comp_layers))
+
+    _chg_layers = [(n, False) for n in
+                   ["NDVI_change", "NDRE_change", "NDMI_change",
+                    "BSI_change", "NDWI_change", "NBR_change"]
+                   if n in _layer_js_names]
+    if _chg_layers:
+        _other_groups.append(("Change bands", _chg_layers))
+
+    if lst_products:
+        _lst_layers = [(n, False) for n in
+                       ["LST median (Landsat)", "LST anomaly (Landsat)", "LST stress class (Landsat)"]
+                       if n in _layer_js_names]
+        if _lst_layers:
+            _other_groups.append(("Land Surface Temp.", _lst_layers))
+
+    _diag_layers = [(n, n in _visible_on_load)
+                    for n in ["AOI", "Failed-pixel diagnostics"]
+                    if n in _layer_js_names]
+    if _diag_layers:
+        _other_groups.append(("Diagnostics", _diag_layers))
+
+    # Build the "Recovery Products" section HTML
+    def _pct_id(label: str) -> str:
+        return "pct-" + "".join(c if c.isalnum() else "_" for c in label)
+
+    def _chk_id(label: str) -> str:
+        return "chk-" + "".join(c if c.isalnum() else "_" for c in label)
+
+    _main_rows_html = ""
+    for short_label, full_name, initial_show, accent in _main_product:
+        checked = "checked" if initial_show else ""
+        _main_rows_html += f"""
+<div style="margin-bottom:10px;">
+  <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;font-weight:500;">
+    <input type="checkbox" id="{_chk_id(full_name)}" data-lname="{full_name}"
+           onchange="lpToggle(this)" {checked}
+           style="width:15px;height:15px;cursor:pointer;accent-color:{accent};">
+    {short_label}
+  </label>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:22px;">
+    <input type="range" min="0" max="100" value="100" data-lname="{full_name}"
+           oninput="lpOpacity(this)"
+           style="flex:1;height:4px;cursor:pointer;accent-color:{accent};">
+    <span id="{_pct_id(full_name)}" style="font-size:10px;color:#777;width:30px;text-align:right;">100%</span>
+  </div>
+</div>"""
+
+    # Build the "Other layers" groups HTML
+    _other_html = ""
+    for grp_title, grp_layers in _other_groups:
+        _other_html += (
+            f'<div style="margin-bottom:8px;">'
+            f'<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;'
+            f'letter-spacing:0.05em;margin-bottom:5px;padding-bottom:3px;border-bottom:1px solid #eee;">'
+            f'{grp_title}</div>'
+        )
+        for name, init_show in grp_layers:
+            checked = "checked" if init_show else ""
+            _other_html += (
+                f'<label style="display:flex;align-items:center;gap:6px;cursor:pointer;'
+                f'font-size:12px;margin-bottom:4px;">'
+                f'<input type="checkbox" data-lname="{name}" onchange="lpToggle(this)" {checked}'
+                f' style="width:13px;height:13px;cursor:pointer;">'
+                f'{name}</label>'
+            )
+        _other_html += '</div>'
+
+    _panel_html = f"""
+<div id="lp-panel" style="
+  position:fixed; top:80px; right:10px; z-index:9999;
+  background:rgba(255,255,255,0.97);
+  border:1px solid #bbb; border-radius:6px;
+  box-shadow:0 3px 10px rgba(0,0,0,0.2);
+  font:13px/1.4 system-ui,sans-serif;
+  width:250px; user-select:none; overflow:hidden;">
+
+  <!-- Header -->
+  <div style="background:#1f5e1f;color:white;padding:9px 13px;
+              font-weight:700;font-size:13px;letter-spacing:0.02em;">
+    Layers
+  </div>
+
+  <!-- Recovery products section -->
+  <div style="padding:12px 13px;border-bottom:1px solid #e0e0e0;">
+    <div style="font-size:10px;font-weight:700;color:#1f5e1f;text-transform:uppercase;
+                letter-spacing:0.07em;margin-bottom:10px;">
+      ● Recovery products
+    </div>
+    {_main_rows_html}
+  </div>
+
+  <!-- Other layers (collapsible) -->
+  <div>
+    <div id="lp-other-hdr" onclick="lpToggleOther()"
+         style="padding:9px 13px;cursor:pointer;display:flex;
+                justify-content:space-between;align-items:center;
+                background:#f7f7f7;border-bottom:1px solid #e0e0e0;">
+      <span style="font-size:10px;font-weight:700;color:#666;
+                   text-transform:uppercase;letter-spacing:0.07em;">Other layers</span>
+      <span id="lp-arrow" style="color:#888;font-size:11px;">▶</span>
+    </div>
+    <div id="lp-other-body" style="display:none;padding:10px 13px;
+                                   max-height:340px;overflow-y:auto;">
+      {_other_html}
+    </div>
+  </div>
+</div>
+"""
+    fmap.get_root().html.add_child(folium.Element(_panel_html))
+
+    # JS variable name → actual JS object map (passed to JS as a JSON dict)
+    _js_name_map_json = json.dumps(_layer_js_names)
+
+    _panel_script = f"""
+(function waitForMap() {{
+  var m = window['{_map_var}'];
+  if (!m) {{ setTimeout(waitForMap, 50); return; }}
+
+  var LP_JS_MAP = {_js_name_map_json};
+
+  function lpGetLayer(name) {{
+    var jsVar = LP_JS_MAP[name];
+    return jsVar ? window[jsVar] : null;
+  }}
+
+  window.lpToggle = function(checkbox) {{
+    var name  = checkbox.getAttribute('data-lname');
+    var layer = lpGetLayer(name);
+    if (!layer) return;
+    if (checkbox.checked) {{
+      layer.addTo(m);
+      m.fire('overlayadd',    {{name: name, layer: layer}});
+    }} else {{
+      m.removeLayer(layer);
+      m.fire('overlayremove', {{name: name, layer: layer}});
+    }}
+  }};
+
+  window.lpOpacity = function(slider) {{
+    var name  = slider.getAttribute('data-lname');
+    var layer = lpGetLayer(name);
+    if (layer && layer.setOpacity) layer.setOpacity(slider.value / 100);
+    var pctEl = document.getElementById('pct-' + name.replace(/[^a-zA-Z0-9]/g, '_'));
+    if (pctEl) pctEl.textContent = slider.value + '%';
+  }};
+
+  window.lpToggleOther = function() {{
+    var body  = document.getElementById('lp-other-body');
+    var arrow = document.getElementById('lp-arrow');
+    if (body.style.display === 'none') {{
+      body.style.display = 'block';
+      arrow.textContent  = '▼';
+    }} else {{
+      body.style.display = 'none';
+      arrow.textContent  = '▶';
+    }}
+  }};
+}})();
+"""
+    fmap.get_root().script.add_child(folium.Element(_panel_script))
 
     out_map = HTML_DIR / f"map_{region_name}.html"
     fmap.save(str(out_map))
